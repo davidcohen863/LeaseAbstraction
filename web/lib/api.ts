@@ -219,6 +219,16 @@ export const api = {
       body: JSON.stringify(body),
       ...opts,
     }),
+  bulkCreateComparables: (
+    items: Array<Omit<Comparable, "id" | "created_at" | "derived_from_lease_id">>,
+    opts?: FetchOpts
+  ) =>
+    call<Comparable[]>("/comparables/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+      ...opts,
+    }),
   deleteComparable: (id: string, opts?: FetchOpts) =>
     call<void>(`/comparables/${id}`, { method: "DELETE", ...opts }),
 

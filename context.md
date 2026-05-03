@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the P1 Lease-detail polish)
+- Last updated: 2026-05-03 (after the P1 Comparables redesign)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -318,7 +318,10 @@ leaseos/
         FieldsPanel.tsx      #   P1 — collapsible field sections, persisted via localStorage
         RightRail.tsx        #   P1 — Approve, Critical Dates, Quick Links, Packs-for-this-lease, Document meta
       calendar/page.tsx      # All events grouped by year, with soon/overdue states
-      comparables/page.tsx   # Market evidence table + add form
+      comparables/page.tsx   # P1 — stats strip (count / median £/sq ft / P25-P75 / median area / total),
+                             #   filters (source, use class), sortable columns, source badges,
+                             #   CSV import (drag/drop + preview + bulk insert) + template download,
+                             #   use-class proper UK Use Classes select
       packs/page.tsx         # Rent-review packs list
       packs/[id]/page.tsx    # Pack detail — 4 docs + headline numbers + settle modal
       integrations/page.tsx  # Slack/Google/Outlook status cards
@@ -330,11 +333,12 @@ leaseos/
       ui/command-palette.tsx # ⌘K global search (cmdk)
       calendar/month-grid.tsx   # P1 — 7-col month grid (date-fns, no library)
       calendar/event-drawer.tsx # P1 — slide-in drawer for event detail + actions
-    proxy.ts                 # Next.js 16 proxy (was middleware) wiring Clerk
     lib/
       api.ts                 # Typed fetch client for the FastAPI backend
       clerk.ts               # Optional-Clerk gate
       humanise.ts            # Enum → English label mappings
+      csv.ts                 # P1 — minimal CSV parser (handles quotes, CRLF)
+    proxy.ts                 # Next.js 16 proxy (was middleware) wiring Clerk
     public/pdf.worker.min.mjs   # Self-hosted pdf.js worker (CSP-friendly)
   scripts/
     generate_demo_lease.py     # Generates the Olive & Vine fictional lease PDF
@@ -380,7 +384,15 @@ leaseos/
 - Settled cards show settled rent + uplift % in green
 - Polls every 4s while any pack is in `generating` state
 
-**Lease detail / Reviewer redesign** (P1, just shipped)
+**Comparables redesign** (P1, just shipped)
+- **Stats strip** at top: count, median £/sq ft, P25–P75 range, median area, total rent in set
+- **Filters**: source multi-select dropdown (Rightmove / EGi / Internal / Manual), use-class multi-select (proper UK Use Classes), search across address/notes
+- **Sortable columns** — Address / Rent / Sq ft / £/sq ft / Date
+- **Coloured source badges** in the table
+- **Use-class select** in the add form (was free text — used proper UK Use Classes E, E(b), F1, F2, B2, B8, etc.)
+- **CSV import** — drag/drop or click-to-pick a CSV file; live preview with per-row validation (✓ ready / ✗ error reason); bulk-insert via `/comparables/bulk`; downloadable template
+
+**Lease detail / Reviewer redesign** (P1)
 - **3-column layout** — PDF (1fr) | Fields (1fr) | RightRail (280px)
 - **PDF viewer toolbar** — zoom −/+, fit-to-width toggle, page-number input + prev/next, scroll-driven current-page tracking via IntersectionObserver
 - **Fields panel** — 8 collapsible sections (Premises, Parties, Term & rent, Rent review, Break clauses, Use & occupation, Service charge, Compliance dates), each shows a low-confidence flag count; collapse state persists per-section in localStorage; citations are now bordered blue pills `p.X · cl. Y`

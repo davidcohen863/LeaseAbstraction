@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after Cloudflare Tunnel runbook + scripts/tunnel.sh — pilot-ready public URL in one command)
+- Last updated: 2026-05-03 (after Cloudflare Tunnel runbook + use_class regex fix in settle_pack)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -645,6 +645,16 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.6 settle_pack use_class regex fix (landed 2026-05-03, hotfix)
+
+**Symptom:** the Comparables list and the comparables-used drawer on each pack showed three rows with `use_class` set to a 121-character paragraph of legal prose instead of `E(b)` — making the use-class filter dropdown unusable on those rows.
+
+**Cause:** `routes/packs.settle_pack()` was writing `comparable.use_class = permitted_use.value` directly. The model's `permitted_use.value` is the verbatim lease clause ("Use as a restaurant and café within Use Class E(b) of the Town and Country Planning…"), not a Use Classes Order code.
+
+**Fix:** added a regex that extracts the first Use Classes Order code (`E`, `E(a)`–`E(g)`, `F1`, `F2`, `B[12]`, `C[1-4]`, `sui generis`) from the clause text. Initial regex used `\b...\b` which silently fell through to bare `E` for `E(b)` inputs (closing `)` and the next char are both non-word, so the trailing `\b` failed) — corrected with negative lookahead `(?!\w)` per alternative. 14 new tests pin the behaviour against real LeaseOS extraction samples + edge cases.
+
+**Pre-demo cleanup:** the three already-bad comparable rows in the local DB were tidied to `E(b)` in-place; no migration needed.
 
 ### 9.4.5 Cloudflare Tunnel runbook (landed 2026-05-03)
 

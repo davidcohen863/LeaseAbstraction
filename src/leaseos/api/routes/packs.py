@@ -323,14 +323,32 @@ def settle_pack(
     record = (lease.record_json or {}) if lease else {}
     address = ((record.get("premises_address") or {}).get("value")) or (lease.label if lease else "Unknown")
     extent = (record.get("premises_extent") or {}).get("value") or ""
-    use_class = ((record.get("permitted_use") or {}).get("value")) or None
+    permitted_use_text = ((record.get("permitted_use") or {}).get("value")) or ""
+    # The permitted-use clause is usually a paragraph of legal prose; the
+    # comparables UI expects a short Use Classes Order code (E, E(b), F1, F2,
+    # sui generis…). Pluck the first matching code out, or None if we can't
+    # find one — better to leave use_class blank than to write a 100-char essay
+    # that breaks the comparables filter UI.
+    import re
+    # Each alternative ends at a non-word char; a trailing `\b` would FAIL
+    # after `E(b)` because `)` and the next char are both non-word — the
+    # engine would then fall through and match bare `E` only. Lookahead
+    # `(?!\w)` says "no further word char" and works for both `E(b)` and `E`.
+    use_class: str | None = None
+    m = re.search(
+        r"\b(sui generis|E\([a-g]\)|E(?!\w)|F1(?!\w)|F2(?!\w)|B[12](?!\w)|C[1-4](?!\w))",
+        permitted_use_text,
+        flags=re.I,
+    )
+    if m:
+        use_class = m.group(1)
+
     # Try to parse a sq ft figure out of the extent string ("approximately 1,250 sq ft")
     area_sqft: float | None = None
-    import re
-    m = re.search(r"([\d,]+)\s*(?:sq\s*ft|square\s*feet)", extent, flags=re.I)
-    if m:
+    m2 = re.search(r"([\d,]+)\s*(?:sq\s*ft|square\s*feet)", extent, flags=re.I)
+    if m2:
         try:
-            area_sqft = float(m.group(1).replace(",", ""))
+            area_sqft = float(m2.group(1).replace(",", ""))
         except ValueError:
             area_sqft = None
 

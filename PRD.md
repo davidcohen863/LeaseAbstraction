@@ -6,7 +6,7 @@
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Pilot customer: **Claridges Commercial**
 - Vision: vertical SaaS for UK commercial property agencies — start with lease abstraction, expand to dilapidations / inspections / acquisitions sourcing
-- Current state: **Local pilot fully working. Pre-deploy. P0 shell + 6 of 7 P1 items shipped** (Properties, Calendar grid, Reviews kanban, Leases-list redesign, Lease-detail polish, Comparables redesign).
+- Current state: **Local pilot fully working. Pre-deploy. UX P0 shell + UX P1 milestone complete (7 of 7 items shipped).**
 
 > **Rule for AI agents in this repo:** every code commit must include updates to `context.md` and `PRD.md` reflecting what changed. See [`CLAUDE.md`](./CLAUDE.md) for the full convention.
 
@@ -153,7 +153,7 @@ Commit: `8fbf753`.
 
 ### 4.3 P1 — Workflow surfaces (~1 week scope)
 
-**Status: 🚧 in progress.** Properties shipped; remaining items still planned.
+**Status: ✅ complete (7 of 7 items shipped).**
 
 | Item | Status | Notes |
 |---|---|---|
@@ -169,7 +169,7 @@ Commit: `8fbf753`.
 | Calendar **month grid** view (vs current vertical list) | ✅ | Built atop date-fns; Month/List view toggle; UK-week (Mon start); Today button |
 | Calendar filters + side-drawer-on-click | ✅ | Type-filter chips + side drawer with Generate-pack action |
 | `/reviews` **kanban board** (Pack pending → Draft → Sent → Settled) | ✅ | Action-button advance for v1 (drag-to-advance deferred); per-card uplift % on settled |
-| Pack detail polish — Word-style typography preview, inline edit numbers, comparables drawer | 📋 | Currently `prose` — replace with serif paper-card |
+| Pack detail polish — Word-style typography preview, inline edit numbers, comparables drawer | ✅ | Georgia/serif paper-card preview, inline-editable opening/settlement (PATCH /packs/{id}), comparables drawer, uplift block when settled |
 | Comparables redesign — stats strip, filters, source badges, CSV import, use-class select | ✅ | Stats (count/median £/sq ft/P25-P75/median area/total) + source/use-class filters + sortable cols + CSV import with per-row validation + UK Use Classes |
 | Comparables map view (Leaflet/Mapbox) + similarity scoring | 📋 | Defer — needs geocoding, can be a v2 add |
 | Use-class select (not free text) | ✅ | Proper UK Use Classes (E, E(b), F1, F2, B2, B8, etc.) |
@@ -260,7 +260,13 @@ Current todo state at top of stack:
 4. ✅ **Leases list redesign** — filter rail + sort + group-by + bulk + CSV
 5. ✅ **Lease detail polish** — 3-col layout + RightRail + collapsible sections + PDF controls
 6. ✅ **Comparables redesign** — stats strip + filters + CSV import + use-class select + source badges
-7. 📋 Pack detail Word-style preview (P1)
+7. ✅ **Pack detail polish** — Word-style preview + inline-editable headline numbers + comparables drawer
+
+**P1 milestone complete.** Next-up candidates from elsewhere on the roadmap:
+- 📋 Two-pass extraction with disagreement-based confidence (original PRD §1)
+- 📋 Auto-trigger cron + Slack notification for pack generation (§3 deferred)
+- 📋 Begin **P2 — Polish + power-user** (Settings hub, Audit log, bbox highlight, j/k keyboard nav, in-UI Slack form)
+- 📋 Deploy (paused)
 
 **OR** the user pivots to:
 - Re-attempt **deploy** (Phase 6) on Fly.io / HF Spaces / Cloudflare Tunnel
@@ -283,7 +289,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | P1 Comparables redesign — stats strip (count / median £/sq ft / P25–P75 range / median area / total rent), source + use-class filter dropdowns, sortable columns, coloured source badges, CSV import (drag/drop + per-row validation + bulk insert) + downloadable template, proper UK Use Classes select, `web/lib/csv.ts` mini-parser |
+| (this commit) | **P1 milestone complete** — Pack detail polish: Word-style typography (Georgia serif paper card), inline-editable headline numbers (Recommended opening / Settlement low / high) backed by new PATCH /packs/{id}, comparables-used drawer, uplift summary block when settled, status pill + breadcrumbs, doc-nav icons + canonical order |
+| `576326d` | P1 Comparables redesign — stats strip (count / median £/sq ft / P25–P75 range / median area / total rent), source + use-class filter dropdowns, sortable columns, coloured source badges, CSV import (drag/drop + per-row validation + bulk insert) + downloadable template, proper UK Use Classes select, `web/lib/csv.ts` mini-parser |
 | `f4aeb42` | P1 Lease-detail polish — 3-column layout (PDF / Fields / RightRail 280px), 8 collapsible field sections persisted to localStorage, citation pills (blue-bordered), PDF viewer toolbar with zoom + fit + page jump + scroll-driven current-page tracking, RightRail with Status + Approve + Critical Dates + Related quick links + Packs-for-this-lease + Document meta |
 | `f686136` | **Fix .gitignore bug** — `leases/` was matching `web/app/leases/`, so the lease UI files (page, [id], FieldsPanel, PdfViewer) had never been pushed. Anchored `/leases/`, `/data/`, `/output/`. Lease UI files now properly committed |
 | `e6f71ce` | P1 Leases-list redesign — left filter rail (status multi + critical-only), sortable columns, group-by (status / property / client), bulk-select + CSV export, Property + Client + Critical columns, search across label / property / client |

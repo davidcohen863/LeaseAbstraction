@@ -2,11 +2,11 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the P1 Comparables redesign)
+- Last updated: 2026-05-03 (after the P1 Pack-detail polish — P1 complete)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
-- Status: **v0.7 working locally — extraction + reviewer + calendar (month + list) + reviews kanban + pack generator + sidebar/Today shell + Properties first-class + leases list with filters/sort/group/bulk.** Pre-deploy.
+- Status: **v0.8 working locally — UX P1 milestone complete.** Extraction + reviewer (3-col + collapsible sections + PDF controls) + calendar (month grid + list) + reviews kanban + pack generator (Word-style preview + inline edit) + sidebar/Today shell + Properties first-class + leases list with filters/sort/group/bulk + comparables with stats/CSV import. Pre-deploy.
 
 > **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship.
 
@@ -323,7 +323,9 @@ leaseos/
                              #   CSV import (drag/drop + preview + bulk insert) + template download,
                              #   use-class proper UK Use Classes select
       packs/page.tsx         # Rent-review packs list
-      packs/[id]/page.tsx    # Pack detail — 4 docs + headline numbers + settle modal
+      packs/[id]/page.tsx    # P1 — Word-style typography preview (Georgia serif, paper card),
+                             #   inline-editable opening/settlement numbers, comparables drawer,
+                             #   uplift summary block when settled
       integrations/page.tsx  # Slack/Google/Outlook status cards
     components/
       nav/sidebar.tsx        # Collapsible sidebar nav (persists state)
@@ -384,7 +386,15 @@ leaseos/
 - Settled cards show settled rent + uplift % in green
 - Polls every 4s while any pack is in `generating` state
 
-**Comparables redesign** (P1, just shipped)
+**Pack detail polish** (P1, just shipped)
+- **Word-style typography** — markdown preview rendered with Georgia/serif font in a paper-like card with shadow, A4-ish margins, justified body — looks like the .docx the surveyor is about to download
+- **Inline-edit headline numbers** — click on Recommended opening / Settlement low / Settlement high → input → Enter to save (PATCH /packs/{id}); shows pencil icon on hover; only enabled when status ∈ {draft, sent}
+- **Comparables drawer** — slide-in side panel listing every comparable in the workspace with £/sq ft for each + link to /comparables to manage
+- **Uplift block** when settled — green callout showing "Settled at £X — uplift of £Y (Z%)"
+- **Status pill** + breadcrumbs at the top
+- Improved doc nav with icons; canonical order (Memo → Comparables → ITZA → Letter)
+
+**Comparables redesign** (P1)
 - **Stats strip** at top: count, median £/sq ft, P25–P75 range, median area, total rent in set
 - **Filters**: source multi-select dropdown (Rightmove / EGi / Internal / Manual), use-class multi-select (proper UK Use Classes), search across address/notes
 - **Sortable columns** — Address / Rent / Sq ft / £/sq ft / Date

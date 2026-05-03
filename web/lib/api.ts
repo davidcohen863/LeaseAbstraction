@@ -247,6 +247,21 @@ export const api = {
     `${API_URL}/packs/${packId}/documents/${docId}`,
   markPackSent: (id: string, opts?: FetchOpts) =>
     call<PackSummary>(`/packs/${id}/sent`, { method: "POST", ...opts }),
+  patchPack: (
+    id: string,
+    body: {
+      recommended_opening_gbp?: number;
+      recommended_settlement_low_gbp?: number;
+      recommended_settlement_high_gbp?: number;
+    },
+    opts?: FetchOpts
+  ) =>
+    call<PackSummary>(`/packs/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      ...opts,
+    }),
   settlePack: (id: string, settled_rent_gbp: number, opts?: FetchOpts) =>
     call<PackSummary>(`/packs/${id}/settle`, {
       method: "POST",

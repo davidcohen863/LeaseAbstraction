@@ -67,6 +67,14 @@ class SettleIn(BaseModel):
     settled_rent_gbp: float
 
 
+class PackPatch(BaseModel):
+    """Inline-edit fields on a pack — surveyor can adjust the model's
+    recommended numbers before sending."""
+    recommended_opening_gbp: float | None = None
+    recommended_settlement_low_gbp: float | None = None
+    recommended_settlement_high_gbp: float | None = None
+
+
 # ---- helpers -------------------------------------------------------------
 
 
@@ -181,6 +189,29 @@ def download_document(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=doc.filename,
     )
+
+
+@router.patch("/packs/{pack_id}", response_model=PackSummary)
+def patch_pack(
+    pack_id: str,
+    body: PackPatch,
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> PackSummary:
+    pack = db.get(RentReviewPack, pack_id)
+    if pack is None:
+        raise HTTPException(404, "Pack not found")
+    if pack.status not in (PackStatus.DRAFT.value, PackStatus.SENT.value):
+        raise HTTPException(400, f"Cannot edit pack in status {pack.status!r}")
+    if body.recommended_opening_gbp is not None:
+        pack.recommended_opening_gbp = body.recommended_opening_gbp
+    if body.recommended_settlement_low_gbp is not None:
+        pack.recommended_settlement_low_gbp = body.recommended_settlement_low_gbp
+    if body.recommended_settlement_high_gbp is not None:
+        pack.recommended_settlement_high_gbp = body.recommended_settlement_high_gbp
+    db.commit()
+    lease = db.get(Lease, pack.lease_id)
+    return _summary(pack, lease.label if lease else None)
 
 
 @router.post("/packs/{pack_id}/sent", response_model=PackSummary)

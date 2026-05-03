@@ -6,7 +6,7 @@
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Pilot customer: **Claridges Commercial**
 - Vision: vertical SaaS for UK commercial property agencies — start with lease abstraction, expand to dilapidations / inspections / acquisitions sourcing
-- Current state: **Local pilot fully working. Pre-deploy. P0 shell + P1 Properties shipped.**
+- Current state: **Local pilot fully working. Pre-deploy. P0 shell + P1 Properties + P1 Calendar grid shipped.**
 
 > **Rule for AI agents in this repo:** every code commit must include updates to `context.md` and `PRD.md` reflecting what changed. See [`CLAUDE.md`](./CLAUDE.md) for the full convention.
 
@@ -165,8 +165,8 @@ Commit: `8fbf753`.
 | Leases list redesign — filter rail (status, client, sector), sort, group-by, bulk actions | 📋 | Search live; rest planned |
 | Lease detail redesign — sticky right-rail action panel, collapsible field sections, inline edit on composites | 📋 | |
 | PDF viewer controls (zoom, fit-to-width, page-jump, search-in-PDF) | 📋 | react-pdf supports it |
-| Calendar **month grid** view (vs current vertical list) | 📋 | react-big-calendar or build atop date-fns |
-| Calendar filters + side-drawer-on-click | 📋 | Filter by event type / lease / surveyor |
+| Calendar **month grid** view (vs current vertical list) | ✅ | Built atop date-fns; Month/List view toggle; UK-week (Mon start); Today button |
+| Calendar filters + side-drawer-on-click | ✅ | Type-filter chips + side drawer with Generate-pack action |
 | `/reviews` **kanban board** (Pack pending → Draft → Sent → Settled) | 📋 | Drag-to-advance pack status |
 | Pack detail polish — Word-style typography preview, inline edit numbers, comparables drawer | 📋 | Currently `prose` — replace with serif paper-card |
 | Comparables map view (Leaflet/Mapbox) + similarity scoring + CSV import | 📋 | Maps + stats row |
@@ -281,7 +281,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | P1 Properties as first-class entity — model migration, auto-link on extraction, `/properties` list + detail, sidebar + cmd-K integration, lease detail breadcrumbs, leases list Property column |
+| (this commit) | P1 Calendar — month grid view (date-fns, no library), event drawer with Generate-pack action, Month/List toggle, type-filter chips, Today button + month nav |
+| `9ba254e` | P1 Properties as first-class entity — model migration, auto-link on extraction, `/properties` list + detail, sidebar + cmd-K integration, lease detail breadcrumbs, leases list Property column |
 | `34c653c` | Add `CLAUDE.md` with docs-update-before-commit rule; bring `context.md` up to date with everything since v0 |
 | `847a504` | Add `PRD.md` — master status index |
 | `b4f081d` | P0 UX shell upgrade — sidebar, topbar, cmd+K, /today, StatusPill |

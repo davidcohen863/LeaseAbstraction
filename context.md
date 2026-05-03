@@ -2,11 +2,11 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the P1 Properties first-class entity)
+- Last updated: 2026-05-03 (after the P1 Calendar month grid)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
-- Status: **v0.4 working locally — extraction + reviewer + calendar + pack generator + sidebar/Today shell + Properties as first-class entity.** Pre-deploy.
+- Status: **v0.5 working locally — extraction + reviewer + calendar (month grid + list) + pack generator + sidebar/Today shell + Properties first-class entity.** Pre-deploy.
 
 > **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship.
 
@@ -321,6 +321,8 @@ leaseos/
       nav/notification-bell.tsx
       ui/status-pill.tsx     # Centralised colour-coded status component
       ui/command-palette.tsx # ⌘K global search (cmdk)
+      calendar/month-grid.tsx   # P1 — 7-col month grid (date-fns, no library)
+      calendar/event-drawer.tsx # P1 — slide-in drawer for event detail + actions
     proxy.ts                 # Next.js 16 proxy (was middleware) wiring Clerk
     lib/
       api.ts                 # Typed fetch client for the FastAPI backend
@@ -349,7 +351,9 @@ leaseos/
 - **Critical Dates banner** at the top of the reviewer (break notice, rent review trigger, expiry) with inline "Generate pack" CTA on review-trigger items
 
 **Calendar & derived events**
-- **Calendar view**: every event grouped by year, with soon/overdue colouring; bold colour-coded event chips
+- **Calendar — month grid view** (P1): proper 7-col grid with prev/next/Today nav, click event chip → side drawer with full details + "Generate review pack" action; coloured chips per event type
+- **Calendar — list view** (toggle): events grouped by year with soon/overdue colouring
+- **Type filter chips** at top of calendar — toggle individual event types on/off
 - **Auto-derived events**: rent review (trigger + effective), break (notice + date), lease expiry, deposit return, **annual insurance renewal**, **EPC expiry** — with proper month-arithmetic (no 30.5-day approximation)
 - **Recurring rent reviews**: cycle expansion using `rent_review.cycle_years`
 

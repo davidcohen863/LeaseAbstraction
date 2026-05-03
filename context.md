@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after Cloudflare Tunnel runbook + use_class regex fix in settle_pack)
+- Last updated: 2026-05-03 (after Cloudflare Tunnel + Next 16 allowedDevOrigins hotfix so tunnelled pages actually load data)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -645,6 +645,14 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.7 Next 16 `allowedDevOrigins` for cross-origin demo (landed 2026-05-03, hotfix)
+
+**Symptom:** the Cloudflare tunnel demo URL loaded the app shell (sidebar, topbar, page chrome) but every data panel sat in its loading state forever. No API requests showed up in `/tmp/leaseos-api.log` — the browser never even sent them.
+
+**Cause:** Next.js 16 dev server has a security feature, `allowedDevOrigins`, that refuses to fully serve internal dev assets (Turbopack chunks, RSC payload, HMR socket) when the browser's `Origin` header is anything other than the exact host the dev server is bound to. The tunnel hostname (`*.trycloudflare.com`) wasn't on the allowlist, so the JS bundle started but never finished initialising — `useEffect` never fired, fetches never went out. The dev console even prints a friendly hint with the exact config snippet to add, which is what surfaced the cause once we read the next-dev log carefully.
+
+**Fix:** added `allowedDevOrigins: ["*.trycloudflare.com", "192.168.*.*", "127.0.0.1", "localhost"]` to `web/next.config.ts`. Production builds ignore this setting, so it's dev-only and safe to leave permanently checked in. Quick-tunnel demos work out-of-the-box now; LAN-IP demos (phone on same Wi-Fi) too. A named tunnel on a custom domain would need an extra entry.
 
 ### 9.4.6 settle_pack use_class regex fix (landed 2026-05-03, hotfix)
 

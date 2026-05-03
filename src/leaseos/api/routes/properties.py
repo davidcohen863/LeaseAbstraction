@@ -97,7 +97,10 @@ def _summarise(db: Session, prop: Property) -> PropertySummary:
         landlord_client=prop.landlord_client,
         notes=prop.notes,
         created_at=prop.created_at,
-        updated_at=prop.updated_at,
+        # Defensive: legacy rows from before the updated_at column was added
+        # via ALTER TABLE may have NULL here. Fall back to created_at so the
+        # response remains valid Pydantic.
+        updated_at=prop.updated_at or prop.created_at,
         lease_count=len(leases),
         active_lease_id=active.id if active else None,
         active_lease_label=active.label if active else None,

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -135,7 +136,15 @@ def _ensure_property(db: Session, address: str) -> str:
     ).scalar_one_or_none()
     if existing is not None:
         return existing.id
-    prop = Property(address=address, address_normalised=norm)
+    # Explicitly set timestamps — the SQLite column was added via ALTER
+    # without a DEFAULT, so the SQLAlchemy server_default doesn't take.
+    now = datetime.utcnow()
+    prop = Property(
+        address=address,
+        address_normalised=norm,
+        created_at=now,
+        updated_at=now,
+    )
     db.add(prop)
     db.flush()  # populate prop.id without committing
     return prop.id

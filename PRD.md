@@ -48,7 +48,7 @@ The original 6-week pilot scope, written before any code. Most of it is shipped.
 |---|---|---|
 | Document ingestion (PDF upload, multi-doc, immutable storage) | ✅ | `src/leaseos/api/routes/leases.py`, `data/documents/` |
 | Lease abstraction engine (25+ fields with citations) | ✅ | `src/leaseos/extract.py`, `schema.py`, `prompts.py` |
-| Two-pass extraction with disagreement-based confidence | 📋 | Single-pass placeholder today; Week-2 quality lift |
+| Two-pass extraction with disagreement-based confidence | ✅ | Neutral pass + "skeptical senior surveyor" pass; substantive-content diff with metadata stripped; mismatched fields get `confidence: low` + `[two-pass disagreement]` note; ~1.3-1.5× single-pass cost via prompt cache |
 | Side-letter / variation overlay logic | 📋 | Schema supports it, worker doesn't merge yet |
 | Reviewer UI (split PDF + structured fields, click-to-source) | ✅ | `web/app/leases/[id]/` |
 | Bounding-box highlighting on citation click | 📋 | Pages + quotes today; bbox in P2 |
@@ -263,7 +263,7 @@ Current todo state at top of stack:
 7. ✅ **Pack detail polish** — Word-style preview + inline-editable headline numbers + comparables drawer
 
 **P1 milestone complete.** Next-up candidates from elsewhere on the roadmap:
-- 📋 Two-pass extraction with disagreement-based confidence (original PRD §1)
+- ✅ Two-pass extraction with disagreement-based confidence (original PRD §1)
 - ✅ Auto-trigger cron + Slack notification for pack generation
 - 📋 Begin **P2 — Polish + power-user** (Settings hub, Audit log, bbox highlight, j/k keyboard nav, in-UI Slack form)
 - 📋 Deploy (paused)
@@ -289,7 +289,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | **`/integrations` in-UI Slack form** — replaces the API-fallback HTML page with a proper form (paste webhook URL, label channel, digest toggle), inline "How to get a webhook URL" guide, Send test + Run digest now quick actions, status badges, account-email display for Google/Outlook |
+| (this commit) | **Two-pass extraction quality lift** — `extract_two_pass()` runs the lease through a neutral pass and a skeptical-senior-surveyor pass; `_merge_records()` strips metadata and JSON-diffs substantive content; any field where the two passes disagree gets `confidence: low` + a `[two-pass disagreement]` note. Worker switched. ~1.3-1.5× single-pass cost via prompt-cached lease content; 2× latency. The `confidence` flag is now a real signal of agreement-between-two-reads, not the model's self-report. |
+| `52adb42` | **`/integrations` in-UI Slack form** — replaces the API-fallback HTML page with a proper form (paste webhook URL, label channel, digest toggle), inline "How to get a webhook URL" guide, Send test + Run digest now quick actions, status badges, account-email display for Google/Outlook |
 | `ff19710` | **Pack auto-trigger + Slack notify** — `POST /packs/auto-trigger?days_ahead=N` (idempotent, finds events with no pack), daily Render cron (06:00 UTC, 180-day horizon), "Auto-trigger (N)" button on /reviews with confirm dialog showing estimated cost, `notify_pack_ready()` Slack message when each pack finishes (current rent, opening, settlement range, "Open pack" button), `scripts/trigger_pending_packs.py` for local cron / GitHub Actions |
 | `4e2b306` | **P1 milestone complete** — Pack detail polish: Word-style typography (Georgia serif paper card), inline-editable headline numbers (Recommended opening / Settlement low / high) backed by new PATCH /packs/{id}, comparables-used drawer, uplift summary block when settled, status pill + breadcrumbs, doc-nav icons + canonical order |
 | `576326d` | P1 Comparables redesign — stats strip (count / median £/sq ft / P25–P75 range / median area / total rent), source + use-class filter dropdowns, sortable columns, coloured source badges, CSV import (drag/drop + per-row validation + bulk insert) + downloadable template, proper UK Use Classes select, `web/lib/csv.ts` mini-parser |

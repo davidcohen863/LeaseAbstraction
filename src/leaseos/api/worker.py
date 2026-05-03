@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..extract import extract
+from ..extract import extract_two_pass
 from ..pdf import load_pdf
 from .db import SessionLocal
 from .events import derive_events
@@ -35,7 +35,8 @@ def run_extraction(lease_id: str, pdf_path: str) -> None:
 
         try:
             pdf = load_pdf(Path(pdf_path))
-            result = extract(pdf)
+            # Two-pass: pays ~1.3-1.5x of single-pass cost; calibrates confidence.
+            result = extract_two_pass(pdf)
         except Exception as exc:  # noqa: BLE001
             log.exception("Extraction failed for lease %s", lease_id)
             lease.status = LeaseStatus.FAILED.value

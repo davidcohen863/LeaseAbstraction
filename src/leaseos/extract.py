@@ -17,7 +17,7 @@ from anthropic import Anthropic
 from pydantic import ValidationError
 
 from .pdf import LoadedPDF
-from .prompts import SYSTEM_PROMPT, USER_PRIMER
+from .prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_SKEPTICAL, USER_PRIMER
 from .schema import LeaseRecord, lease_record_json_schema
 
 
@@ -97,8 +97,18 @@ def pick_model(pdf: LoadedPDF, override: str | None = None) -> str:
     return DEFAULT_MODEL
 
 
-def extract(pdf: LoadedPDF, *, model: str | None = None, max_tokens: int = 8000) -> ExtractionResult:
-    """Run a single-pass extraction. Returns a validated LeaseRecord."""
+def extract(
+    pdf: LoadedPDF,
+    *,
+    model: str | None = None,
+    max_tokens: int = 8000,
+    system_prompt: str | None = None,
+) -> ExtractionResult:
+    """Run a single-pass extraction. Returns a validated LeaseRecord.
+
+    `system_prompt` overrides the default neutral SYSTEM_PROMPT — used by
+    `extract_two_pass()` for the "skeptical" second pass.
+    """
     client = Anthropic()
     chosen_model = pick_model(pdf, override=model)
 
@@ -112,7 +122,7 @@ def extract(pdf: LoadedPDF, *, model: str | None = None, max_tokens: int = 8000)
         system=[
             {
                 "type": "text",
-                "text": SYSTEM_PROMPT,
+                "text": system_prompt or SYSTEM_PROMPT,
                 "cache_control": {"type": "ephemeral"},
             }
         ],
@@ -156,3 +166,102 @@ def _extract_tool_input(response) -> dict:
         f"Model did not call the {TOOL_NAME!r} tool. Stop reason: {response.stop_reason}. "
         f"Content blocks: {[getattr(b, 'type', '?') for b in response.content]}"
     )
+
+
+# ---- Two-pass extraction (week-2 PRD quality lift) -----------------------
+
+# Cost: pass 2 reuses the cached lease content (~90% cheaper for the lease
+# tokens) but pays full price for its own system prompt. Roughly 1.3-1.5x
+# the cost of a single pass, not 2x. Worth it for high-stakes leases — the
+# `confidence` flag becomes signal not noise.
+#
+# Latency: ~2x — both passes run sequentially. Could parallelise later if
+# the BackgroundTasks wait becomes annoying.
+
+META_KEYS_FOR_DIFF = {"citation", "confidence", "notes"}
+TWO_PASS_NOTE_PREFIX = "[two-pass disagreement]"
+
+
+def extract_two_pass(
+    pdf: LoadedPDF,
+    *,
+    model: str | None = None,
+    max_tokens: int = 8000,
+) -> ExtractionResult:
+    """Run extraction twice with deliberately different framings, merge with
+    disagreement-based confidence. The merged record's `confidence` flags
+    are calibrated by *agreement between two independent reads*, not the
+    model's self-reported confidence (which is well-known to be miscalibrated).
+    """
+    pass1 = extract(pdf, model=model, max_tokens=max_tokens, system_prompt=SYSTEM_PROMPT)
+    pass2 = extract(pdf, model=model, max_tokens=max_tokens, system_prompt=SYSTEM_PROMPT_SKEPTICAL)
+
+    merged_record, disagreement_count = _merge_records(pass1.record, pass2.record)
+
+    # Aggregate metrics across both passes
+    return ExtractionResult(
+        record=merged_record,
+        raw_tool_input=pass1.raw_tool_input,
+        model=f"{pass1.model} (2-pass; {disagreement_count} disagreements)",
+        elapsed_seconds=pass1.elapsed_seconds + pass2.elapsed_seconds,
+        input_tokens=pass1.input_tokens + pass2.input_tokens,
+        output_tokens=pass1.output_tokens + pass2.output_tokens,
+        cache_read_tokens=pass1.cache_read_tokens + pass2.cache_read_tokens,
+        cache_write_tokens=pass1.cache_write_tokens + pass2.cache_write_tokens,
+    )
+
+
+def _merge_records(p1: LeaseRecord, p2: LeaseRecord) -> tuple[LeaseRecord, int]:
+    """Merge two LeaseRecord readings into one, downgrading confidence where
+    they disagree on substantive content. Returns (merged, disagreement_count).
+
+    Strategy:
+    - Take pass 1 as the canonical record.
+    - For each top-level field, strip metadata (citation/confidence/notes —
+      the wording legitimately varies between passes) and JSON-compare what's
+      left.
+    - If different: clone the field, set confidence="low", append a note
+      flagging the two-pass disagreement.
+    - Pass 1 wins on the actual value — we don't try to pick a "better" one
+      because both readings are equally informed; the surveyor must verify.
+    """
+    a = p1.model_dump(mode="json")
+    b = p2.model_dump(mode="json")
+
+    disagreements = 0
+    merged: dict[str, object] = {}
+
+    for key, va in a.items():
+        if not isinstance(va, dict):
+            # Engine metadata fields — keep pass 1's
+            merged[key] = va
+            continue
+        vb = b.get(key) if isinstance(b, dict) else None
+        if _strip_meta(va) == _strip_meta(vb):
+            merged[key] = va
+            continue
+        # Disagreement — clone with downgraded confidence + appended note
+        disagreements += 1
+        cloned = dict(va)
+        if "confidence" in cloned:
+            cloned["confidence"] = "low"
+        existing_notes = (cloned.get("notes") or "").strip()
+        new_note = f"{TWO_PASS_NOTE_PREFIX} the second-pass reading differed; verify before sending."
+        cloned["notes"] = (
+            f"{existing_notes} {new_note}".strip() if existing_notes else new_note
+        )
+        merged[key] = cloned
+
+    return LeaseRecord.model_validate(merged), disagreements
+
+
+def _strip_meta(v):
+    """Remove citation / confidence / notes recursively from a dict-like
+    value so we can compare substantive content across two passes."""
+    if v is None:
+        return None
+    if isinstance(v, dict):
+        return {k: _strip_meta(val) for k, val in v.items() if k not in META_KEYS_FOR_DIFF}
+    if isinstance(v, list):
+        return [_strip_meta(x) for x in v]
+    return v

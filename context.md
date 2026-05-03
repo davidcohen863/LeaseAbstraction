@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the in-UI Slack form on /integrations)
+- Last updated: 2026-05-03 (after two-pass extraction quality lift)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -359,8 +359,8 @@ leaseos/
 
 **Extraction & reviewer**
 - **Upload** a real PDF → background extraction with Claude Sonnet 4.6
+- **Two-pass extraction** with disagreement-based confidence — runs the lease through a neutral prompt and a "skeptical senior surveyor" prompt; any field where the two passes disagree on substantive content is forced to `confidence: low` with a `[two-pass disagreement]` note. Costs ~1.3-1.5× a single pass thanks to prompt-caching the lease content; latency ~2×
 - **Per-field citations** (page, clause reference, verbatim quote) for every extracted value
-- **Two confidence states** (high / low — currently single-pass placeholder, two-pass is week-2)
 - **Reviewer UI**: split-screen with click-to-jump-to-source; inline edit; approve workflow; humanised enum values; breadcrumbs; engineer telemetry hidden
 - **Critical Dates banner** at the top of the reviewer (break notice, rent review trigger, expiry) with inline "Generate pack" CTA on review-trigger items
 
@@ -572,7 +572,7 @@ When ready, options are:
 
 ### 9.1 Extraction quality (originally Week-2 PRD work)
 
-- **Two-pass extraction** with disagreement-based confidence (currently single-pass; the PRD requires two-pass to hit the 95% confidence calibration bar)
+- ✅ **Two-pass extraction** with disagreement-based confidence — neutral + skeptical-senior-surveyor passes, merged with confidence override
 - **Side-letter / variation overlay** logic — schema supports it, the worker doesn't merge yet
 - **Bounding-box highlighting** on the PDF viewer (citations have page + quote but no bbox yet)
 - **Prefer stated over computed dates** — when the lease text explicitly states a deadline (e.g. "31 October 2026"), prefer that over the mathematically-derived date

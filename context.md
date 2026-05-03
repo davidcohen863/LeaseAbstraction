@@ -2,13 +2,13 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after P2 UX milestone + pdf.js worker version-lock via postinstall)
+- Last updated: 2026-05-03 (after Cloudflare Tunnel runbook + scripts/tunnel.sh — pilot-ready public URL in one command)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
 - Status: **v0.8 working locally — UX P1 milestone complete.** Extraction + reviewer (3-col + collapsible sections + PDF controls) + calendar (month grid + list) + reviews kanban + pack generator (Word-style preview + inline edit) + sidebar/Today shell + Properties first-class + leases list with filters/sort/group/bulk + comparables with stats/CSV import. Pre-deploy.
 
-> **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`CODE_REVIEW.md`](./CODE_REVIEW.md)** for the security + correctness audit; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship.
+> **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`CODE_REVIEW.md`](./CODE_REVIEW.md)** for the security + correctness audit; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship to Render + Vercel; **[`DEMO.md`](./DEMO.md)** for the Cloudflare Tunnel + Claridges demo runbook.
 
 ---
 
@@ -369,6 +369,11 @@ leaseos/
     backfill_properties.py     # P1 — assign existing leases to Property rows + run column migrations
     trigger_pending_packs.py   # Cron-friendly POST to /packs/auto-trigger
     migrate_documents.py       # Add side-letter summary columns to documents table
+    tunnel.sh                  # Cloudflare quick-tunnel orchestrator: spins up
+                               #   public URLs for both API + frontend, patches
+                               #   .env / web/.env.local + bounces dev servers,
+                               #   prints the public URL. `tunnel.sh stop` tears
+                               #   it all down. See DEMO.md for the runbook.
   data/                      # Local SQLite DB + uploaded documents + generated packs (gitignored)
   alembic/                   # Migrations — env.py reads DATABASE_URL from settings;
                              #   versions/ has baseline + dev-drift-cleanup + oauth_states
@@ -377,7 +382,7 @@ leaseos/
   Dockerfile                 # Production image — CMD runs `alembic upgrade head` first
   render.yaml                # Render Blueprint (API + Postgres + nightly cron)
   web/vercel.json            # Vercel config
-  README.md   PRD.md   context.md   UX_PLAN.md   DEPLOY.md   CLAUDE.md
+  README.md   PRD.md   context.md   UX_PLAN.md   DEPLOY.md   DEMO.md   CLAUDE.md
 ```
 
 ### 6.3 What works end-to-end (verified locally)
@@ -595,13 +600,15 @@ scripts/db.sh check                          # detect drift between model and DB
 
 ## 8. Deployment
 
-Full step-by-step in [DEPLOY.md](./DEPLOY.md). Currently **paused**: Render's free web-service tier was retired in 2024 and the user prefers to keep iterating locally before committing to paid hosting.
+Two paths:
 
-When ready, options are:
+- **For a Claridges demo (today):** [`DEMO.md`](./DEMO.md) — `scripts/tunnel.sh` spins up two Cloudflare quick tunnels (no Cloudflare account needed), patches `.env` + `web/.env.local`, restarts both dev servers, prints a public `https://*.trycloudflare.com` URL. ~30s end-to-end. URL is ephemeral (changes on restart) and only works while the laptop is awake — fine for a demo, not a production service.
+- **For a permanent home (when Claridges says yes):** [`DEPLOY.md`](./DEPLOY.md) — Render (API + Postgres + cron) + Vercel (Next.js) + Clerk + Google + Microsoft. ~60–90 min first time, ~$15/month, then `git push` to redeploy.
+
+Other options if Render isn't a fit:
 - **Fly.io** — auto-stop hobby machines = $0 if low traffic; requires card on file
 - **Hugging Face Spaces** — free, no card, supports Docker; quirks for non-ML apps
-- **Render** — easiest dev experience, ~$15/month for API + Postgres
-- **Local + Cloudflare Tunnel** — free demo URL, but only when laptop is awake
+- **Cloudflare named tunnel** — free, stable subdomain; needs a Cloudflare account + DNS setup. Suitable for multi-day pilot if cost-sensitive.
 
 ---
 
@@ -638,6 +645,26 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.5 Cloudflare Tunnel runbook (landed 2026-05-03)
+
+**Why:** the user wanted a way to put LeaseOS in front of Claridges *this week*, without committing to Render's paid hosting before the firm has clicked around.
+
+**What:** `scripts/tunnel.sh` (one command) and `DEMO.md` (the playbook).
+
+The script:
+
+1. Starts two `cloudflared tunnel --url ...` quick tunnels (one per service); no Cloudflare account needed.
+2. Parses the `https://*.trycloudflare.com` URLs out of cloudflared's stderr.
+3. Appends the frontend tunnel URL to `LEASEOS_CORS_ORIGINS` in `.env` and overwrites `NEXT_PUBLIC_API_URL` in `web/.env.local` with the API tunnel URL.
+4. Bounces both dev servers so the env changes take effect.
+5. Smoke-tests `/health` + `/today` through the tunnels and prints the public URL.
+
+`scripts/tunnel.sh stop` tears down both tunnels and both dev servers. The script keeps `.tunnel-backup` copies of the env files in case of regret.
+
+`DEMO.md` is the demo-day playbook: pre-flight (seed demo lease + 5 N8 comparables + pre-generate one rent-review pack so the click-to-pack scene is instant), the seven-scene walk-through (Today → Reviewer → Calendar → Reviews → Pack → Settings → Q&A), the FAQ answers, and what's *not* in the demo (so we don't accidentally promise bbox highlighting or per-firm templates).
+
+Tunnels are ephemeral — restart and the URL changes. For a multi-day pilot, set up a named tunnel via Cloudflare Dashboard.
 
 ### 9.4.4 PDF worker version-lock (landed 2026-05-03, hotfix)
 

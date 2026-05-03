@@ -11,7 +11,10 @@ import {
   X,
 } from "lucide-react";
 import { api, type Comparable } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { parseCsv } from "@/lib/csv";
+import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 
 // ---- enums --------------------------------------------------------------
 
@@ -51,8 +54,10 @@ type SortDir = "asc" | "desc";
 // ---- main page ---------------------------------------------------------
 
 export default function ComparablesPage() {
-  const [comps, setComps] = useState<Comparable[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: comps, loading, refetching, error, refetch } = useApi<Comparable[]>(
+    (opts) => api.listComparables(opts),
+  );
+  const load = refetch;
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -68,9 +73,6 @@ export default function ComparablesPage() {
   // Sort
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-
-  const load = () => api.listComparables().then(setComps).catch((e) => setError(String(e)));
-  useEffect(() => { void load(); }, []);
 
   const filtered = useMemo(() => {
     if (!comps) return null;
@@ -131,7 +133,9 @@ export default function ComparablesPage() {
       </header>
 
       {error && (
-        <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+        <div className="mb-6">
+          <ErrorState error={error} onRetry={refetch} retrying={refetching} compact />
+        </div>
       )}
 
       {/* Stats strip — descriptive analytics */}
@@ -186,8 +190,11 @@ export default function ComparablesPage() {
       )}
 
       {/* Table */}
-      {comps === null ? (
+      {loading ? (
         <Loading />
+      ) : comps === null ? (
+        // Errored on first load — banner above is the message.
+        null
       ) : comps.length === 0 ? (
         <EmptyState />
       ) : sorted && sorted.length === 0 ? (
@@ -787,12 +794,16 @@ function Field({ label, children, full = false }: { label: string; children: Rea
 
 function EmptyState() {
   return (
-    <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-12 text-center">
-      <div className="text-neutral-700 font-medium">No comparables yet</div>
-      <p className="text-sm text-neutral-500 mt-1">
-        Add at least 3 to generate a rent-review pack with meaningful evidence.
-      </p>
-    </div>
+    <SharedEmptyState
+      icon={UploadIcon}
+      title="No comparables yet"
+      description="Add at least 3 to generate a rent-review pack with meaningful evidence. Settled reviews on this platform feed back automatically."
+      actions={[
+        { label: "Add manually", href: "#add", variant: "primary" },
+        { label: "Import CSV", href: "#import", variant: "secondary" },
+      ]}
+      hint="Sources: Rightmove, EGi, internal deal sheets, manual paste."
+    />
   );
 }
 

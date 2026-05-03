@@ -4,6 +4,8 @@ import { use, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { api, type LeaseDetail } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
+import { ErrorState } from "@/components/ui/error-state";
 import FieldsPanel from "./FieldsPanel";
 import { RightRail } from "./RightRail";
 
@@ -12,32 +14,26 @@ const PdfViewer = dynamic(() => import("./PdfViewer"), { ssr: false });
 
 export default function LeaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [lease, setLease] = useState<LeaseDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const leaseQ = useApi<LeaseDetail>((opts) => api.getLease(id, opts), [id]);
+  const lease = leaseQ.data;
+  const error = leaseQ.error;
+  const load = leaseQ.refetch;
   const [scrollPage, setScrollPage] = useState<number | null>(null);
 
-  const load = () =>
-    api
-      .getLease(id)
-      .then(setLease)
-      .catch((e) => setError(String(e)));
-
+  // Poll while extraction is in progress
   useEffect(() => {
-    void load();
-    const interval = setInterval(() => {
-      setLease((prev) => {
-        if (prev && (prev.status === "uploaded" || prev.status === "extracting")) {
-          void load();
-        }
-        return prev;
-      });
-    }, 3000);
+    if (!lease || (lease.status !== "uploaded" && lease.status !== "extracting")) return;
+    const interval = setInterval(() => leaseQ.refetch(), 3000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [lease?.status]);
 
-  if (error) {
-    return <div className="p-8 text-sm text-red-700">{error}</div>;
+  if (error && !lease) {
+    return (
+      <div className="p-8 max-w-xl mx-auto">
+        <ErrorState error={error} onRetry={load} retrying={leaseQ.refetching} />
+      </div>
+    );
   }
   if (!lease) {
     return <div className="p-8 text-sm text-neutral-500">Loading…</div>;
@@ -127,9 +123,9 @@ export default function LeaseDetailPage({ params }: { params: Promise<{ id: stri
               lease={lease}
               onApprove={async () => {
                 await api.approve(id);
-                await load();
+                load();
               }}
-              onChanged={load}
+              onChanged={async () => { load(); }}
             />
           </div>
         </div>

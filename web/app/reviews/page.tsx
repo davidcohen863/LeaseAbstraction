@@ -14,6 +14,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { api, type LeaseEvent, type PackSummary } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
+import { ErrorState } from "@/components/ui/error-state";
 
 type ColumnKey = "pending" | "draft" | "sent" | "settled";
 
@@ -44,30 +46,27 @@ const COLUMN_META: Record<
 };
 
 export default function ReviewsBoard() {
-  const [events, setEvents] = useState<LeaseEvent[] | null>(null);
-  const [packs, setPacks] = useState<PackSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const eventsQ = useApi<LeaseEvent[]>(
+    (opts) => api.listEvents({ days_ahead: 365 * 3, days_behind: 30 }, opts),
+  );
+  const packsQ = useApi<PackSummary[]>((opts) => api.listPacks(undefined, opts));
+  const events = eventsQ.data;
+  const packs = packsQ.data;
 
-  const load = () =>
-    Promise.all([
-      api.listEvents({ days_ahead: 365 * 3, days_behind: 30 }).catch(() => []),
-      api.listPacks().catch(() => []),
-    ]).then(([e, p]) => {
-      setEvents(e);
-      setPacks(p);
-    });
+  const load = () => {
+    eventsQ.refetch();
+    packsQ.refetch();
+  };
+  const anyError = eventsQ.error || packsQ.error;
+  const anyRetrying = eventsQ.refetching || packsQ.refetching;
 
+  // Poll while anything is generating
   useEffect(() => {
-    void load();
-    const id = setInterval(() => {
-      // Poll while anything is generating
-      setPacks((prev) => {
-        if (prev?.some((p) => p.status === "generating")) void load();
-        return prev;
-      });
-    }, 4000);
+    if (!packs?.some((p) => p.status === "generating")) return;
+    const id = setInterval(() => packsQ.refetch(), 4000);
     return () => clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packs?.map((p) => p.status).join(",")]);
 
   const columns = useMemo(() => buildColumns(events, packs), [events, packs]);
 
@@ -97,12 +96,17 @@ export default function ReviewsBoard() {
         </div>
       </header>
 
-      {error && (
-        <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+      {anyError && (
+        <div className="mb-6">
+          <ErrorState error={anyError} onRetry={load} retrying={anyRetrying} compact />
+        </div>
       )}
 
-      {events === null || packs === null ? (
+      {(eventsQ.loading || packsQ.loading) ? (
         <div className="text-sm text-neutral-500">Loading…</div>
+      ) : events === null || packs === null ? (
+        // Errored on first load — banner above is the message.
+        null
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {(Object.keys(COLUMN_META) as ColumnKey[]).map((key) => (

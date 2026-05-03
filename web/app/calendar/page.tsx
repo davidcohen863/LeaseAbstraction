@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,7 +15,9 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight, CalendarDays, List as ListIcon } from "lucide-react";
 import { api, type LeaseEvent } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { StatusPill, EVENT_TYPE_TONE } from "@/components/ui/status-pill";
+import { ErrorState } from "@/components/ui/error-state";
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { EventDrawer } from "@/components/calendar/event-drawer";
 
@@ -33,22 +35,19 @@ const ALL_EVENT_TYPES: { value: string; label: string }[] = [
 ];
 
 export default function CalendarPage() {
-  const [events, setEvents] = useState<LeaseEvent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Pull a wide window once. Future: refetch on month nav if portfolio is huge.
+  const eventsQ = useApi<LeaseEvent[]>(
+    (opts) => api.listEvents({ days_ahead: 365 * 15, days_behind: 365 * 2 }, opts),
+  );
+  const events = eventsQ.data;
+  const error = eventsQ.error;
+
   const [view, setView] = useState<ViewMode>("month");
   const [monthAnchor, setMonthAnchor] = useState<Date>(startOfMonth(new Date()));
   const [activeEvent, setActiveEvent] = useState<LeaseEvent | null>(null);
   const [enabledTypes, setEnabledTypes] = useState<Set<string>>(
     () => new Set(ALL_EVENT_TYPES.map((t) => t.value))
   );
-
-  // Pull a wide window once. Future: refetch on month nav if portfolio is huge.
-  useEffect(() => {
-    api
-      .listEvents({ days_ahead: 365 * 15, days_behind: 365 * 2 })
-      .then(setEvents)
-      .catch((e) => setError(String(e)));
-  }, []);
 
   const filtered = useMemo(() => {
     if (!events) return [] as LeaseEvent[];
@@ -83,7 +82,9 @@ export default function CalendarPage() {
       </header>
 
       {error && (
-        <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+        <div className="mb-6">
+          <ErrorState error={error} onRetry={eventsQ.refetch} retrying={eventsQ.refetching} compact />
+        </div>
       )}
 
       {/* Type filter chips */}
@@ -94,8 +95,11 @@ export default function CalendarPage() {
         onClearAll={clearAllTypes}
       />
 
-      {events === null ? (
+      {eventsQ.loading ? (
         <Loading />
+      ) : events === null ? (
+        // Errored on first load — banner above is the message.
+        null
       ) : view === "month" ? (
         <MonthView
           monthAnchor={monthAnchor}

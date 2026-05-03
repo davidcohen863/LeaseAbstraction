@@ -405,6 +405,17 @@ export const api = {
       ...opts,
     }),
 
+  // Templates (per-firm Word .docx for the pack generator)
+  listTemplates: (opts?: FetchOpts) => call<TemplateInfo[]>("/templates", opts),
+  uploadTemplate: async (kind: string, file: File, opts?: FetchOpts): Promise<TemplateInfo> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return call<TemplateInfo>(`/templates/${kind}`, { method: "POST", body: fd, ...opts });
+  },
+  deleteTemplate: (kind: string, opts?: FetchOpts) =>
+    call<void>(`/templates/${kind}`, { method: "DELETE", ...opts }),
+  templateDownloadUrl: (kind: string) => `${API_URL}/templates/${kind}/download`,
+
   // Audit
   listAudit: (params?: { limit?: number }, opts?: FetchOpts) => {
     const qs = new URLSearchParams();
@@ -419,6 +430,14 @@ export const api = {
     return call<AuditEntry[]>(`/leases/${leaseId}/audit${suffix}`, opts);
   },
 };
+
+export interface TemplateInfo {
+  kind: "landlord_memo" | "comparables_schedule" | "itza_analysis" | "trigger_letter" | string;
+  label: string;
+  uploaded: boolean;
+  size_bytes?: number | null;
+  original_filename?: string | null;
+}
 
 export interface AuditEntry {
   id: string;

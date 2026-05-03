@@ -40,13 +40,16 @@ def safe_filename(name: str | None) -> str:
 
 
 def _allowed_roots() -> list[Path]:
-    """Every directory we're willing to serve files from. Both `data/documents/`
-    (uploaded lease PDFs + side-letters) and `data/packs/` (generated .docx)
-    sit alongside each other under the storage parent.
+    """Every directory we're willing to serve files from:
+      - `data/documents/` — uploaded lease PDFs + side-letters
+      - `data/packs/`     — generated rent-review pack .docx files
+      - `data/templates/` — firm-uploaded Word templates (per-kind)
+    All three sit alongside each other under the storage parent.
     """
     settings = get_settings()
     storage = settings.storage_dir.resolve()
-    return [storage, (storage.parent / "packs").resolve()]
+    parent = storage.parent
+    return [storage, (parent / "packs").resolve(), (parent / "templates").resolve()]
 
 
 def serve_inside_sandbox(

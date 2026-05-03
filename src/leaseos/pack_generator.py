@@ -166,27 +166,56 @@ def _extract_tool_input(response) -> dict:
 # ---- Word .docx rendering -----------------------------------------------
 
 
+def _firm_template_path(kind: str) -> Path | None:
+    """If the firm has uploaded a Word template for `kind`, return its path.
+    Otherwise return None (caller falls back to the LeaseOS default style).
+
+    Templates live next to the documents store at `data/templates/{kind}.docx`
+    so they're co-located with everything else file-system-y. Single-tenant
+    convention for v1; will move to per-firm storage once Clerk Organisations
+    lands.
+    """
+    from .api.config import get_settings
+
+    settings = get_settings()
+    templates_dir = settings.storage_dir.parent / "templates"
+    candidate = templates_dir / f"{kind}.docx"
+    return candidate if candidate.exists() else None
+
+
 def render_docx(*, kind: str, markdown_content: str, output_path: Path, title: str) -> None:
     """Render a markdown document to .docx. Lightweight markdown subset:
     H1/H2/H3, bold inline (**), bullet lists, tables (pipe syntax), paragraphs.
+
+    If the firm has uploaded a custom template at `data/templates/{kind}.docx`,
+    that template's first-page header / styles / firm logo are preserved and
+    the generated content is appended below them. Otherwise the LeaseOS
+    default Calibri 11pt style is used.
     """
     from docx import Document
     from docx.shared import Pt, Cm
 
-    doc = Document()
-    # Default style
-    normal = doc.styles["Normal"]
-    normal.font.name = "Calibri"
-    normal.font.size = Pt(11)
-    for section in doc.sections:
-        section.left_margin = Cm(2.2)
-        section.right_margin = Cm(2.2)
-        section.top_margin = Cm(2.0)
-        section.bottom_margin = Cm(2.0)
+    template_path = _firm_template_path(kind)
+    if template_path is not None:
+        # Open the firm's template — keeps their styles, logos, footers.
+        doc = Document(str(template_path))
+        # Don't touch styles or margins — assume the firm set those deliberately.
+    else:
+        doc = Document()
+        # LeaseOS default style
+        normal = doc.styles["Normal"]
+        normal.font.name = "Calibri"
+        normal.font.size = Pt(11)
+        for section in doc.sections:
+            section.left_margin = Cm(2.2)
+            section.right_margin = Cm(2.2)
+            section.top_margin = Cm(2.0)
+            section.bottom_margin = Cm(2.0)
 
     if title:
         h = doc.add_heading(title, level=0)
-        h.runs[0].font.size = Pt(16)
+        if h.runs:
+            h.runs[0].font.size = Pt(16)
 
     _render_markdown_into(doc, markdown_content)
 

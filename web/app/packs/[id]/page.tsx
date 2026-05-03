@@ -13,7 +13,9 @@ import {
   X,
 } from "lucide-react";
 import { api, type Comparable, type PackDetail, type PackDocumentOut } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { StatusPill } from "@/components/ui/status-pill";
+import { ErrorState } from "@/components/ui/error-state";
 
 const KIND_LABEL: Record<string, string> = {
   landlord_memo: "Landlord memo",
@@ -33,24 +35,20 @@ const KIND_ORDER = ["landlord_memo", "comparables_schedule", "itza_analysis", "t
 
 export default function PackDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [pack, setPack] = useState<PackDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const packQ = useApi<PackDetail>((opts) => api.getPack(id, opts), [id]);
+  const pack = packQ.data;
+  const error = packQ.error;
+  const load = packQ.refetch;
   const [activeKind, setActiveKind] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const load = () => api.getPack(id).then(setPack).catch((e) => setError(String(e)));
-
+  // Poll while generating
   useEffect(() => {
-    void load();
-    const interval = setInterval(() => {
-      setPack((prev) => {
-        if (prev && prev.status === "generating") void load();
-        return prev;
-      });
-    }, 3000);
+    if (pack?.status !== "generating") return;
+    const interval = setInterval(() => packQ.refetch(), 3000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [pack?.status]);
 
   useEffect(() => {
     if (pack && pack.documents.length > 0 && activeKind === null) {
@@ -60,7 +58,13 @@ export default function PackDetailPage({ params }: { params: Promise<{ id: strin
     }
   }, [pack, activeKind]);
 
-  if (error) return <div className="p-8 text-sm text-red-700">{error}</div>;
+  if (error && !pack) {
+    return (
+      <div className="p-8 max-w-xl mx-auto">
+        <ErrorState error={error} onRetry={load} retrying={packQ.refetching} />
+      </div>
+    );
+  }
   if (!pack) return <div className="p-8 text-sm text-neutral-500">Loading…</div>;
 
   const sortedDocs = [...pack.documents].sort(
@@ -113,7 +117,7 @@ export default function PackDetailPage({ params }: { params: Promise<{ id: strin
       {pack.status !== "generating" && pack.status !== "failed" && (
         <>
           {/* Headline numbers — inline editable */}
-          <HeadlineNumbers pack={pack} onChanged={load} />
+          <HeadlineNumbers pack={pack} onChanged={async () => { load(); }} />
 
           {/* Doc viewer with sidebar nav */}
           {sortedDocs.length > 0 && (

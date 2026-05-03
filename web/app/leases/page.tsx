@@ -15,6 +15,7 @@ import {
 import { api, type LeaseEvent, type LeaseSummary, type PropertySummary } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { humanise } from "@/lib/humanise";
+import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { StatusPill } from "@/components/ui/status-pill";
 
@@ -638,18 +639,13 @@ function CriticalBadge({ days }: { days: number | null }) {
 
 function EmptyState({ onPick }: { onPick: () => void }) {
   return (
-    <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-12 text-center">
-      <div className="text-neutral-700 font-medium mb-1">No leases yet</div>
-      <p className="text-sm text-neutral-500 mb-4">
-        Drop a commercial lease PDF and we&apos;ll extract every clause.
-      </p>
-      <button
-        onClick={onPick}
-        className="inline-flex items-center rounded-md bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-700"
-      >
-        Upload first lease
-      </button>
-    </div>
+    <SharedEmptyState
+      icon={Upload}
+      title="No leases yet"
+      description="Drop a commercial lease PDF and we'll extract every clause — parties, term, rent review, breaks, repair, alienation — in 2–5 minutes. Calendar events for reviews, breaks and expiries appear automatically."
+      actions={[{ label: "Upload first lease", onClick: onPick, variant: "primary" }]}
+      hint="PDFs only — text or scanned. ~£0.20 per lease in API costs."
+    />
   );
 }
 

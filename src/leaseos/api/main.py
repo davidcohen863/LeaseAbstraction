@@ -24,6 +24,7 @@ from .routes import integrations as integrations_routes
 from .routes import leases as leases_routes
 from .routes import packs as packs_routes
 from .routes import properties as properties_routes
+from .routes import templates as templates_routes
 
 
 @asynccontextmanager
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(packs_routes.router)
     app.include_router(properties_routes.router)
     app.include_router(audit_routes.router)
+    app.include_router(templates_routes.router)
     return app
 
 

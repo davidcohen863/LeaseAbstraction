@@ -1,27 +1,29 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { Building2, FileText, Pencil } from "lucide-react";
 import { api, type PropertyDetail } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { StatusPill } from "@/components/ui/status-pill";
+import { ErrorState } from "@/components/ui/error-state";
 
 export default function PropertyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [prop, setProp] = useState<PropertyDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const propQ = useApi<PropertyDetail>((opts) => api.getProperty(id, opts), [id]);
+  const prop = propQ.data;
+  const error = propQ.error;
+  const load = propQ.refetch;
   const [editing, setEditing] = useState(false);
 
-  const load = () =>
-    api.getProperty(id).then(setProp).catch((e) => setError(String(e)));
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  if (error) return <div className="p-8 text-sm text-red-700">{error}</div>;
+  if (error && !prop) {
+    return (
+      <div className="p-8 max-w-xl mx-auto">
+        <ErrorState error={error} onRetry={load} retrying={propQ.refetching} />
+      </div>
+    );
+  }
   if (!prop) return <div className="p-8 text-sm text-neutral-500">Loading…</div>;
 
   return (

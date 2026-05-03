@@ -1,22 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, FileEdit, ScrollText } from "lucide-react";
 import { api, type AuditEntry } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
+import { ErrorState } from "@/components/ui/error-state";
 
 export default function AuditPage() {
-  const [entries, setEntries] = useState<AuditEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: entries, loading, refetching, error, refetch } = useApi<AuditEntry[]>(
+    (opts) => api.listAudit({ limit: 200 }, opts),
+  );
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | "field_edit" | "lease_approved">("all");
-
-  useEffect(() => {
-    api
-      .listAudit({ limit: 200 })
-      .then(setEntries)
-      .catch((e) => setError(String(e)));
-  }, []);
 
   const filtered = useMemo(() => {
     if (!entries) return null;
@@ -62,11 +58,16 @@ export default function AuditPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+        <div className="mb-3">
+          <ErrorState error={error} onRetry={refetch} retrying={refetching} compact />
+        </div>
       )}
 
-      {filtered === null ? (
+      {loading ? (
         <SkeletonList />
+      ) : filtered === null ? (
+        // Errored on first load — banner above is the message.
+        null
       ) : filtered.length === 0 ? (
         entries && entries.length === 0 ? (
           <EmptyState />

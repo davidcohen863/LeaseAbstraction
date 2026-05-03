@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after frontend hardening: 15s fetch timeouts + useApi hook + ErrorState component so silent loading-spinners are now visible "couldn't load — retry?" cards)
+- Last updated: 2026-05-03 (after P2.1 UI completion: useApi+ErrorState across every fetching page, polished empty states, real notification bell, per-firm Word template upload)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -303,6 +303,7 @@ leaseos/
         packs.py             # Generate / list / detail / download / settle packs
         integrations.py      # Slack config + Google/Microsoft OAuth + event push
         audit.py             # Read-only feed of FieldEdit + lease approvals (P2)
+      templates.py         # Per-firm Word .docx upload per pack-document kind (P2.1)
     integrations/
       slack.py               # Webhook digest sender
       google.py              # Google Calendar OAuth + event push
@@ -338,7 +339,8 @@ leaseos/
         profile/page.tsx     #   Clerk UserProfile (lazy-imported, optional Clerk gate)
         firm/page.tsx        #   Firm name/address/default surveyor (localStorage v1)
         integrations/page.tsx #  Slack/Google/Outlook (moved from top nav)
-        templates/page.tsx   #   Word .docx upload — coming soon
+        templates/page.tsx   #   Per-kind Word .docx upload (P2.1) — generated
+                             #   packs preserve firm letterhead + styles
         members/page.tsx     #   Multi-user — coming soon
         audit/page.tsx       #   Searchable read-only audit feed
     components/
@@ -382,7 +384,8 @@ leaseos/
                                #   .env / web/.env.local + bounces dev servers,
                                #   prints the public URL. `tunnel.sh stop` tears
                                #   it all down. See DEMO.md for the runbook.
-  data/                      # Local SQLite DB + uploaded documents + generated packs (gitignored)
+  data/                      # Local SQLite DB + uploaded documents + generated packs + firm templates (gitignored)
+                             #   leaseos.db, documents/, packs/, templates/
   alembic/                   # Migrations — env.py reads DATABASE_URL from settings;
                              #   versions/ has baseline + dev-drift-cleanup + oauth_states
   alembic.ini                # Alembic config (sqlalchemy.url overridden in env.py)
@@ -653,6 +656,23 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.9 P2.1 UI completion (landed 2026-05-03)
+
+The "fully complete the UI stuff" pass that finishes off the P2 milestone (with the explicit deferrals listed at the end).
+
+- ✅ **`useApi` + `<ErrorState>` rolled to every fetching page** — list pages (`/today`, `/leases`, `/properties`, `/packs`, `/comparables`, `/calendar`, `/reviews`, `/settings/audit`) and detail pages (`/leases/[id]`, `/properties/[id]`, `/packs/[id]`). Every fetch now has a 15s timeout and a visible "Couldn't load — retry?" card on failure. The lease-detail RightRail keeps its own `.catch(() => [])` defaults because it has reasonable empty-state copy already.
+- ✅ **Shared `<EmptyState>` standardised** — bespoke empty cards on `/leases`, `/properties`, `/comparables` replaced with the shared component (icon + title + description + 1–2 CTAs + hint footnote). Visual consistency + every empty state now tells the user *what to do next*.
+- ✅ **Notification bell is real** — drives off `GET /events?days_ahead=60&days_behind=30`, surfaces critical events (rent_review_trigger / break_notice_deadline / lease_expiry / epc_expiry) within 30 days OR overdue. Badge colour: red if anything overdue, amber otherwise. Auto-refreshes every 5 min in the background. Click-through goes to the lease.
+- ✅ **Per-firm Word template upload** — Templates page is no longer a placeholder. New `routes/templates.py` (`GET /templates`, `POST /templates/{kind}`, `DELETE /templates/{kind}`, `GET /templates/{kind}/download`); files live at `data/templates/{kind}.docx` (single-tenant convention for v1). `pack_generator.render_docx()` checks for `data/templates/{kind}.docx` and uses it as the base document if present (firm letterhead + logo + footer styles preserved); falls back to the LeaseOS default Calibri 11pt otherwise. Upload validates .docx (parses with python-docx before persisting), rejects > 10 MB, sanitises original filename via `safe_filename`. Template downloads go through `serve_inside_sandbox` (which now also allowlists `data/templates/`). 9 new tests pin the round-trip + the render-uses-template behaviour.
+
+**Deferrals (deliberate, not forgotten):**
+- Bbox highlight on citation click — needs bbox coordinates in extraction first; that's a backend prompt-and-schema change, not a UI tweak. Tracked in PRD §4.4.
+- Workspace switcher in topbar — multi-tenant prep; post-pilot per CLAUDE.md §4.
+- Formal accessibility audit (axe + keyboard-only run) — iterative, not one-shot. Quick wins (focus rings, aria-labels) already in place.
+- Frontend test runner (vitest) — adding it just for `useApi` would be heavier than the change itself. The TS type-checker + live tunnel currently cover this; vitest is the next quality investment.
+
+121/121 backend tests passing (was 112). Frontend `tsc --noEmit` clean.
 
 ### 9.4.8 Frontend hardening — fetch timeouts + visible error states (landed 2026-05-03)
 

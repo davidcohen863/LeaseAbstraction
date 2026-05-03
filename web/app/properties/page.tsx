@@ -6,6 +6,7 @@ import { format, parseISO } from "date-fns";
 import { Building2 } from "lucide-react";
 import { api, type PropertySummary } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 
 export default function PropertiesPage() {
@@ -153,14 +154,12 @@ function PropertyTable({ items }: { items: PropertySummary[] }) {
 
 function EmptyState() {
   return (
-    <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-12 text-center">
-      <Building2 className="mx-auto mb-3 text-neutral-400" />
-      <div className="text-neutral-700 font-medium">No properties yet</div>
-      <p className="text-sm text-neutral-500 mt-1">
-        Properties are auto-created when you upload a lease — go to{" "}
-        <Link href="/leases" className="underline">Leases</Link> to add the first one.
-      </p>
-    </div>
+    <SharedEmptyState
+      icon={Building2}
+      title="No properties yet"
+      description="Properties are auto-created when you upload a lease — the address is normalised so two leases at the same building roll up to one Property record."
+      actions={[{ label: "Upload a lease", href: "/leases", variant: "primary" }]}
+    />
   );
 }
 

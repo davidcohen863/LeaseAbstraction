@@ -43,6 +43,55 @@ export interface LeaseEvent {
   pushed_to_outlook: boolean;
 }
 
+export interface Comparable {
+  id: string;
+  address: string;
+  rent_pa_gbp: number;
+  area_sqft: number | null;
+  frontage_m: number | null;
+  use_class: string | null;
+  deal_date: string | null;
+  deal_type: string;
+  source: string;
+  notes: string | null;
+  derived_from_lease_id: string | null;
+  created_at: string;
+}
+
+export interface PackDocumentOut {
+  id: string;
+  pack_id: string;
+  kind: "landlord_memo" | "comparables_schedule" | "itza_analysis" | "trigger_letter" | string;
+  filename: string;
+  markdown_content: string | null;
+}
+
+export type PackStatus = "generating" | "draft" | "sent" | "settled" | "failed";
+
+export interface PackSummary {
+  id: string;
+  lease_id: string;
+  lease_label: string | null;
+  lease_event_id: string | null;
+  status: PackStatus;
+  current_rent_gbp: number | null;
+  recommended_opening_gbp: number | null;
+  recommended_settlement_low_gbp: number | null;
+  recommended_settlement_high_gbp: number | null;
+  settled_rent_gbp: number | null;
+  settled_at: string | null;
+  generator_model: string | null;
+  generated_seconds: number | null;
+  error: string | null;
+  comparables_used_count: number;
+  created_at: string;
+  sent_at: string | null;
+}
+
+export interface PackDetail extends PackSummary {
+  documents: PackDocumentOut[];
+}
+
 interface FetchOpts {
   token?: string | null;
   signal?: AbortSignal;
@@ -117,4 +166,43 @@ export const api = {
 
   acknowledgeEvent: (eventId: string, opts?: FetchOpts) =>
     call<LeaseEvent>(`/events/${eventId}/acknowledge`, { method: "POST", ...opts }),
+
+  // Comparables
+  listComparables: (opts?: FetchOpts) =>
+    call<Comparable[]>("/comparables", opts),
+  createComparable: (
+    body: Omit<Comparable, "id" | "created_at" | "derived_from_lease_id">,
+    opts?: FetchOpts
+  ) =>
+    call<Comparable>("/comparables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      ...opts,
+    }),
+  deleteComparable: (id: string, opts?: FetchOpts) =>
+    call<void>(`/comparables/${id}`, { method: "DELETE", ...opts }),
+
+  // Packs
+  generatePackForEvent: (eventId: string, opts?: FetchOpts) =>
+    call<PackSummary>(`/events/${eventId}/pack`, { method: "POST", ...opts }),
+  listPacks: (params?: { lease_id?: string }, opts?: FetchOpts) => {
+    const qs = new URLSearchParams();
+    if (params?.lease_id) qs.set("lease_id", params.lease_id);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return call<PackSummary[]>(`/packs${suffix}`, opts);
+  },
+  getPack: (id: string, opts?: FetchOpts) =>
+    call<PackDetail>(`/packs/${id}`, opts),
+  packDocumentUrl: (packId: string, docId: string) =>
+    `${API_URL}/packs/${packId}/documents/${docId}`,
+  markPackSent: (id: string, opts?: FetchOpts) =>
+    call<PackSummary>(`/packs/${id}/sent`, { method: "POST", ...opts }),
+  settlePack: (id: string, settled_rent_gbp: number, opts?: FetchOpts) =>
+    call<PackSummary>(`/packs/${id}/settle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settled_rent_gbp }),
+      ...opts,
+    }),
 };

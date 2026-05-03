@@ -28,6 +28,8 @@ function Header() {
           <nav className="flex gap-4 text-sm text-neutral-600">
             <Link href="/leases" className="hover:text-neutral-900">Leases</Link>
             <Link href="/calendar" className="hover:text-neutral-900">Calendar</Link>
+            <Link href="/comparables" className="hover:text-neutral-900">Comparables</Link>
+            <Link href="/packs" className="hover:text-neutral-900">Packs</Link>
             <Link href="/integrations" className="hover:text-neutral-900">Integrations</Link>
           </nav>
         </div>

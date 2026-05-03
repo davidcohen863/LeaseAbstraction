@@ -195,3 +195,103 @@ class SlackIntegration(Base):
     channel_label: Mapped[str | None] = mapped_column(String(255))
     digest_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ---- Rent-review pack models --------------------------------------------
+
+
+class PackStatus(str, Enum):
+    GENERATING = "generating"
+    DRAFT = "draft"
+    SENT = "sent"
+    SETTLED = "settled"
+    FAILED = "failed"
+
+
+class PackDocumentKind(str, Enum):
+    LANDLORD_MEMO = "landlord_memo"
+    COMPARABLES_SCHEDULE = "comparables_schedule"
+    ITZA_ANALYSIS = "itza_analysis"
+    TRIGGER_LETTER = "trigger_letter"
+
+
+class DealType(str, Enum):
+    LETTING = "letting"
+    RENT_REVIEW = "rent_review"
+    SALE = "sale"
+
+
+class ComparableSource(str, Enum):
+    RIGHTMOVE = "rightmove"
+    EGI = "egi"
+    INTERNAL = "internal"  # e.g. derived from a settled review on this platform
+    MANUAL = "manual"
+
+
+class Comparable(Base):
+    """Market evidence used by the rent-review pack generator."""
+
+    __tablename__ = "comparables"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    address: Mapped[str] = mapped_column(Text, index=True)
+    rent_pa_gbp: Mapped[float] = mapped_column(Float)
+    area_sqft: Mapped[float | None] = mapped_column(Float)
+    frontage_m: Mapped[float | None] = mapped_column(Float)
+    use_class: Mapped[str | None] = mapped_column(String(32))  # E, F1, F2, sui generis...
+    deal_date: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    deal_type: Mapped[str] = mapped_column(String(32), default=DealType.LETTING.value)
+    source: Mapped[str] = mapped_column(String(32), default=ComparableSource.MANUAL.value)
+    notes: Mapped[str | None] = mapped_column(Text)
+    # If this comparable was derived from a settled review on a lease in this DB
+    derived_from_lease_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("leases.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class RentReviewPack(Base):
+    __tablename__ = "rent_review_packs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    lease_id: Mapped[str] = mapped_column(String(36), ForeignKey("leases.id"), index=True)
+    lease_event_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("lease_events.id"))
+    status: Mapped[str] = mapped_column(String(32), default=PackStatus.GENERATING.value, index=True)
+
+    # Headline numbers from the model's recommendation
+    current_rent_gbp: Mapped[float | None] = mapped_column(Float)
+    recommended_opening_gbp: Mapped[float | None] = mapped_column(Float)
+    recommended_settlement_low_gbp: Mapped[float | None] = mapped_column(Float)
+    recommended_settlement_high_gbp: Mapped[float | None] = mapped_column(Float)
+
+    # On settlement
+    settled_rent_gbp: Mapped[float | None] = mapped_column(Float)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    # Operational metadata
+    generator_model: Mapped[str | None] = mapped_column(String(64))
+    generated_seconds: Mapped[float | None] = mapped_column(Float)
+    error: Mapped[str | None] = mapped_column(Text)
+    comparables_used_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    documents: Mapped[list["PackDocument"]] = relationship(
+        back_populates="pack", cascade="all, delete-orphan"
+    )
+
+
+class PackDocument(Base):
+    """One generated document inside a RentReviewPack — memo, schedule, ITZA, letter."""
+
+    __tablename__ = "pack_documents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    pack_id: Mapped[str] = mapped_column(String(36), ForeignKey("rent_review_packs.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(64))
+    filename: Mapped[str] = mapped_column(String(512))
+    storage_path: Mapped[str] = mapped_column(String(1024))
+    # Markdown preview so the UI can render inline without downloading the .docx
+    markdown_content: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    pack: Mapped[RentReviewPack] = relationship(back_populates="documents")

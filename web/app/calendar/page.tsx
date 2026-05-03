@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   differenceInDays,
   format,
@@ -116,10 +117,25 @@ export default function CalendarPage() {
 }
 
 function EventRow({ e }: { e: LeaseEvent }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
   const dt = parseISO(e.event_date);
   const overdue = isPast(dt);
   const days = differenceInDays(dt, new Date());
   const urgent = !overdue && days <= 90;
+  const isReview = e.event_type === "rent_review_trigger";
+
+  async function generatePack() {
+    setBusy(true);
+    try {
+      const pack = await api.generatePackForEvent(e.id);
+      router.push(`/packs/${pack.id}`);
+    } catch (err) {
+      alert(`Failed: ${err}`);
+      setBusy(false);
+    }
+  }
+
   return (
     <li
       className={`rounded-lg border bg-white p-4 ${
@@ -140,18 +156,23 @@ function EventRow({ e }: { e: LeaseEvent }) {
             >
               {EVENT_LABEL[e.event_type] ?? e.event_type}
             </span>
-            {overdue && (
-              <span className="text-xs text-red-700 font-medium">overdue</span>
-            )}
-            {urgent && (
-              <span className="text-xs text-amber-700 font-medium">soon</span>
-            )}
+            {overdue && <span className="text-xs text-red-700 font-medium">overdue</span>}
+            {urgent && <span className="text-xs text-amber-700 font-medium">soon</span>}
           </div>
           <Link href={`/leases/${e.lease_id}`} className="font-medium hover:underline">
             {e.title}
           </Link>
           {e.description && (
             <p className="mt-1 text-sm text-neutral-600">{e.description}</p>
+          )}
+          {isReview && (
+            <button
+              onClick={generatePack}
+              disabled={busy}
+              className="mt-2 rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {busy ? "Generating…" : "Generate review pack"}
+            </button>
           )}
         </div>
         <div className="text-right shrink-0">

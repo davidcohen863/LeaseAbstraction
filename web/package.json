@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "sync-pdf-worker": "node -e \"const fs=require('fs'),path=require('path');const src=require.resolve('pdfjs-dist/build/pdf.worker.min.mjs',{paths:[require.resolve('react-pdf')]});const dst=path.join(process.cwd(),'public','pdf.worker.min.mjs');fs.copyFileSync(src,dst);const v=require(require.resolve('pdfjs-dist/package.json',{paths:[require.resolve('react-pdf')]})).version;console.log('pdf.worker.min.mjs synced from react-pdf\\u2019s pdfjs-dist@'+v);\"",
+    "postinstall": "npm run sync-pdf-worker"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.0",

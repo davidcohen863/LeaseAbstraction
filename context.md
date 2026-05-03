@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after P2 UX milestone: Settings hub at /settings, audit log + activity feed, j/k keyboard nav in reviewer, polished empty states)
+- Last updated: 2026-05-03 (after P2 UX milestone + pdf.js worker version-lock via postinstall)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -356,7 +356,12 @@ leaseos/
       humanise.ts            # Enum → English label mappings
       csv.ts                 # P1 — minimal CSV parser (handles quotes, CRLF)
     proxy.ts                 # Next.js 16 proxy (was middleware) wiring Clerk
-    public/pdf.worker.min.mjs   # Self-hosted pdf.js worker (CSP-friendly)
+    public/pdf.worker.min.mjs   # Self-hosted pdf.js worker (CSP-friendly).
+                                # Version-locked to whatever pdfjs-dist react-pdf's
+                                # nested install resolves — kept in sync by the
+                                # `postinstall` → `sync-pdf-worker` script in package.json.
+                                # Don't edit by hand; if pdfjs-dist bumps, npm install
+                                # will refresh this file (commit the diff).
   scripts/
     generate_demo_lease.py     # Generates the Olive & Vine fictional lease PDF
     rederive_events.py         # Re-derive LeaseEvent rows without re-extraction
@@ -633,6 +638,16 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.4 PDF worker version-lock (landed 2026-05-03, hotfix)
+
+**Symptom:** lease detail page threw `UnknownErrorException: The API version "5.4.296" does not match the Worker version "5.7.284"` and refused to render the PDF.
+
+**Cause:** the self-hosted worker at `web/public/pdf.worker.min.mjs` had been copied from the project's top-level `pdfjs-dist@^5.7.284` dep, but `react-pdf@10.4.1` resolves its own nested `pdfjs-dist@5.4.296` for the `<Document>` component. pdf.js refuses to run when worker and API versions don't match exactly.
+
+**Fix:** new `sync-pdf-worker` npm script in `web/package.json` resolves `pdfjs-dist/build/pdf.worker.min.mjs` from `react-pdf`'s own dependency tree and copies it to `public/`. Wired as `postinstall` so `npm install` keeps the worker in lockstep automatically — no more silent drift after dependency bumps.
+
+**Workflow:** if a future `npm install` updates pdfjs-dist (visible as a diff to the worker file), commit the new worker alongside the package-lock diff.
 
 ### 9.4.3 P2 UX milestone (landed 2026-05-03)
 

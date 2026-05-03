@@ -23,11 +23,33 @@ export interface LeaseSummary {
   extraction_model: string | null;
   extraction_seconds: number | null;
   document_count: number;
+  property_id: string | null;
+  property_address: string | null;
 }
 
 export interface LeaseDetail extends LeaseSummary {
   record_json: Record<string, unknown> | null;
   extraction_error: string | null;
+}
+
+export interface PropertySummary {
+  id: string;
+  address: string;
+  sector: string | null;
+  landlord_client: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  lease_count: number;
+  active_lease_id: string | null;
+  active_lease_label: string | null;
+  next_event_date: string | null;
+  next_event_title: string | null;
+}
+
+export interface PropertyDetail extends PropertySummary {
+  leases: { id: string; label: string; status: string; created_at: string }[];
+  upcoming_events: { id: string; event_type: string; event_date: string; title: string }[];
 }
 
 export interface LeaseEvent {
@@ -166,6 +188,23 @@ export const api = {
 
   acknowledgeEvent: (eventId: string, opts?: FetchOpts) =>
     call<LeaseEvent>(`/events/${eventId}/acknowledge`, { method: "POST", ...opts }),
+
+  // Properties
+  listProperties: (opts?: FetchOpts) =>
+    call<PropertySummary[]>("/properties", opts),
+  getProperty: (id: string, opts?: FetchOpts) =>
+    call<PropertyDetail>(`/properties/${id}`, opts),
+  patchProperty: (
+    id: string,
+    body: { sector?: string | null; landlord_client?: string | null; notes?: string | null },
+    opts?: FetchOpts
+  ) =>
+    call<PropertySummary>(`/properties/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      ...opts,
+    }),
 
   // Comparables
   listComparables: (opts?: FetchOpts) =>

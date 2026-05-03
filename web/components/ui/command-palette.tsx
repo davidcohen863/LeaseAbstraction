@@ -11,8 +11,9 @@ import {
   BarChart3,
   Plug,
   Upload,
+  Building2,
 } from "lucide-react";
-import { api, type LeaseSummary, type Comparable, type PackSummary } from "@/lib/api";
+import { api, type LeaseSummary, type Comparable, type PackSummary, type PropertySummary } from "@/lib/api";
 
 interface Props {
   open: boolean;
@@ -23,6 +24,7 @@ interface IndexState {
   leases: LeaseSummary[];
   comparables: Comparable[];
   packs: PackSummary[];
+  properties: PropertySummary[];
   loading: boolean;
 }
 
@@ -33,21 +35,23 @@ export function CommandPalette({ open, onOpenChange }: Props) {
     leases: [],
     comparables: [],
     packs: [],
+    properties: [],
     loading: false,
   });
 
   // Lazy-load the index the first time the palette opens
   useEffect(() => {
-    if (!open || index.leases.length || index.loading) return;
+    if (!open || index.leases.length || index.properties.length || index.loading) return;
     setIndex((s) => ({ ...s, loading: true }));
     Promise.all([
       api.listLeases().catch(() => []),
       api.listComparables().catch(() => []),
       api.listPacks().catch(() => []),
-    ]).then(([leases, comparables, packs]) => {
-      setIndex({ leases, comparables, packs, loading: false });
+      api.listProperties().catch(() => []),
+    ]).then(([leases, comparables, packs, properties]) => {
+      setIndex({ leases, comparables, packs, properties, loading: false });
     });
-  }, [open, index.leases.length, index.loading]);
+  }, [open, index.leases.length, index.properties.length, index.loading]);
 
   // Reset query when closed
   useEffect(() => {
@@ -90,6 +94,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
           {/* Quick actions */}
           <Command.Group heading="Jump to" className="text-xs text-neutral-400 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1">
             <NavItem icon={Home} label="Today" onSelect={() => go("/today")} />
+            <NavItem icon={Building2} label="Properties" onSelect={() => go("/properties")} />
             <NavItem icon={FileText} label="Leases" onSelect={() => go("/leases")} />
             <NavItem icon={CalendarDays} label="Calendar" onSelect={() => go("/calendar")} />
             <NavItem icon={BarChart3} label="Comparables" onSelect={() => go("/comparables")} />
@@ -97,6 +102,29 @@ export function CommandPalette({ open, onOpenChange }: Props) {
             <NavItem icon={Plug} label="Integrations" onSelect={() => go("/integrations")} />
             <NavItem icon={Upload} label="Upload new lease" onSelect={() => go("/leases")} />
           </Command.Group>
+
+          {/* Properties */}
+          {index.properties.length > 0 && (
+            <Command.Group heading={`Properties (${index.properties.length})`} className="mt-2 text-xs text-neutral-400 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1">
+              {index.properties.slice(0, 10).map((p) => (
+                <Command.Item
+                  key={p.id}
+                  value={`property ${p.address} ${p.landlord_client ?? ""}`}
+                  onSelect={() => go(`/properties/${p.id}`)}
+                  className="flex items-center gap-3 rounded-md px-2 py-2 text-sm aria-selected:bg-neutral-100 cursor-pointer"
+                >
+                  <Building2 size={16} className="text-neutral-400" />
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate text-neutral-900">{p.address}</div>
+                    <div className="text-xs text-neutral-400">
+                      {p.lease_count} lease{p.lease_count === 1 ? "" : "s"}
+                      {p.landlord_client ? ` · ${p.landlord_client}` : ""}
+                    </div>
+                  </div>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          )}
 
           {/* Leases */}
           {index.leases.length > 0 && (

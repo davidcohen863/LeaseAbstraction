@@ -75,11 +75,27 @@ class Property(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     address: Mapped[str] = mapped_column(Text)
+    # Lower-cased + whitespace-collapsed address for dedupe/lookup on lease ingestion.
+    address_normalised: Mapped[str] = mapped_column(String(512), index=True)
     sector: Mapped[str | None] = mapped_column(String(64))
     landlord_client: Mapped[str | None] = mapped_column(String(255), index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
     leases: Mapped[list["Lease"]] = relationship(back_populates="property")
+
+
+def normalise_address(addr: str | None) -> str:
+    """Cheap dedupe key: lowercase, collapse internal whitespace, strip punctuation."""
+    if not addr:
+        return ""
+    import re
+    cleaned = re.sub(r"\s+", " ", addr.strip().lower())
+    cleaned = re.sub(r"[\.,;:]+", "", cleaned)
+    return cleaned
 
 
 class Lease(Base):

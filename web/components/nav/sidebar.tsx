@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Briefcase,
+  Building2,
 } from "lucide-react";
 
 interface NavItem {
@@ -25,6 +26,7 @@ interface NavItem {
 
 const PRIMARY_NAV: NavItem[] = [
   { href: "/today",        label: "Today",        icon: Home },
+  { href: "/properties",   label: "Properties",   icon: Building2, matchPrefix: "/properties" },
   { href: "/leases",       label: "Leases",       icon: FileText, matchPrefix: "/leases" },
   { href: "/calendar",     label: "Calendar",     icon: CalendarDays },
   { href: "/comparables",  label: "Comparables",  icon: BarChart3 },

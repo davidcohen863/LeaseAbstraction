@@ -6,7 +6,7 @@
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Pilot customer: **Claridges Commercial**
 - Vision: vertical SaaS for UK commercial property agencies — start with lease abstraction, expand to dilapidations / inspections / acquisitions sourcing
-- Current state: **Local pilot fully working. Pre-deploy. P0 UX shell shipped.**
+- Current state: **Local pilot fully working. Pre-deploy. P0 shell + P1 Properties shipped.**
 
 > **Rule for AI agents in this repo:** every code commit must include updates to `context.md` and `PRD.md` reflecting what changed. See [`CLAUDE.md`](./CLAUDE.md) for the full convention.
 
@@ -153,14 +153,17 @@ Commit: `8fbf753`.
 
 ### 4.3 P1 — Workflow surfaces (~1 week scope)
 
-**Status: 📋 planned, ready to build.** The deep redesigns of the pages where work actually happens.
+**Status: 🚧 in progress.** Properties shipped; remaining items still planned.
 
 | Item | Status | Notes |
 |---|---|---|
-| **Properties** as a first-class entity | 📋 | DB FK exists (`Lease.property_id`); need API routes + `/properties` UI |
-| `/properties` list + `/properties/[id]` detail | 📋 | Portfolio table grouped by client; property history of leases |
-| Leases list redesign — filter rail (status, client, sector), sort, group-by, bulk actions | 📋 | Replace flat table; remove `Model` column; add `Property` + `Client` |
-| Lease detail redesign — breadcrumbs (✅ done), sticky right-rail action panel, collapsible field sections, inline edit on composites | 🚧 | Breadcrumbs in; rest planned |
+| **Properties** as a first-class entity | ✅ | Worker auto-links lease → property by normalised address; backfill script for existing leases |
+| `/properties` list + `/properties/[id]` detail | ✅ | List has search + group-by-client; detail has lease history, upcoming events, inline edit |
+| Lease detail breadcrumbs include Property | ✅ | `Home › Properties › [property] › Lease` |
+| Leases list — Property column | ✅ | `web/app/leases/page.tsx` |
+| Properties in cmd-K palette | ✅ | `web/components/ui/command-palette.tsx` |
+| Leases list redesign — filter rail (status, client, sector), sort, group-by, bulk actions | 📋 | Search live; rest planned |
+| Lease detail redesign — sticky right-rail action panel, collapsible field sections, inline edit on composites | 📋 | |
 | PDF viewer controls (zoom, fit-to-width, page-jump, search-in-PDF) | 📋 | react-pdf supports it |
 | Calendar **month grid** view (vs current vertical list) | 📋 | react-big-calendar or build atop date-fns |
 | Calendar filters + side-drawer-on-click | 📋 | Filter by event type / lease / surveyor |
@@ -245,11 +248,11 @@ When ready to ship: see [`DEPLOY.md`](./DEPLOY.md).
 
 ## 8. What we're working on **right now**
 
-Active milestone: **UX P1 — Workflow surfaces** is next.
+Active milestone: **UX P1 — Workflow surfaces** is in progress. Properties shipped; the rest still queued.
 
 Current todo state at top of stack:
 
-1. 📋 **Properties** as a first-class entity (P1) — biggest IA shift
+1. ✅ **Properties** as a first-class entity (just shipped)
 2. 📋 Leases list redesign with filter rail + group-by (P1)
 3. 📋 Calendar month-grid view (P1)
 4. 📋 Lease detail collapsible sections + sticky right-rail (P1)
@@ -278,7 +281,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | Add `CLAUDE.md` with docs-update-before-commit rule; bring `context.md` up to date with everything since v0; cross-link the master docs |
+| (this commit) | P1 Properties as first-class entity — model migration, auto-link on extraction, `/properties` list + detail, sidebar + cmd-K integration, lease detail breadcrumbs, leases list Property column |
+| `34c653c` | Add `CLAUDE.md` with docs-update-before-commit rule; bring `context.md` up to date with everything since v0 |
 | `847a504` | Add `PRD.md` — master status index |
 | `b4f081d` | P0 UX shell upgrade — sidebar, topbar, cmd+K, /today, StatusPill |
 | `8fbf753` | Six UX quick wins |

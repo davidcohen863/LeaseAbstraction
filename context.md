@@ -2,11 +2,11 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the P0 UX shell upgrade)
+- Last updated: 2026-05-03 (after the P1 Properties first-class entity)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
-- Status: **v0.3 working locally — extraction + reviewer + calendar + pack generator + new sidebar/Today shell.** Pre-deploy.
+- Status: **v0.4 working locally — extraction + reviewer + calendar + pack generator + sidebar/Today shell + Properties as first-class entity.** Pre-deploy.
 
 > **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship.
 
@@ -292,6 +292,7 @@ leaseos/
       pack_worker.py         # Background pack-generation task
       routes/
         leases.py            # Upload, list, detail, document, patch field, approve
+        properties.py        # List + detail + patch (P1 — first-class entity)
         events.py            # List + acknowledge calendar events
         comparables.py       # CRUD for market evidence
         packs.py             # Generate / list / detail / download / settle packs
@@ -305,7 +306,9 @@ leaseos/
       layout.tsx             # P0 shell: Sidebar + Topbar + ClerkProvider
       page.tsx               # 302 → /today
       today/page.tsx         # Dashboard — KPIs, action this week, recent activity
-      leases/page.tsx        # Upload + polling list with live search
+      properties/page.tsx    # P1 — list grouped by client, search
+      properties/[id]/page.tsx  # P1 — lease history, upcoming events, edit metadata
+      leases/page.tsx        # Upload + polling list with live search + Property column
       leases/[id]/           # Reviewer split-screen (PdfViewer + FieldsPanel)
       calendar/page.tsx      # All events grouped by year, with soon/overdue states
       comparables/page.tsx   # Market evidence table + add form
@@ -325,9 +328,10 @@ leaseos/
       humanise.ts            # Enum → English label mappings
     public/pdf.worker.min.mjs   # Self-hosted pdf.js worker (CSP-friendly)
   scripts/
-    generate_demo_lease.py   # Generates the Olive & Vine fictional lease PDF
-    rederive_events.py       # Re-derive LeaseEvent rows without re-extraction
-    seed_n8_comparables.py   # Seed 5 fictional N8 retail comparables
+    generate_demo_lease.py     # Generates the Olive & Vine fictional lease PDF
+    rederive_events.py         # Re-derive LeaseEvent rows without re-extraction
+    seed_n8_comparables.py     # Seed 5 fictional N8 retail comparables
+    backfill_properties.py     # P1 — assign existing leases to Property rows + run column migrations
   data/                      # Local SQLite DB + uploaded documents + generated packs (gitignored)
   Dockerfile                 # Production image for the API
   render.yaml                # Render Blueprint (API + Postgres + nightly cron)
@@ -365,11 +369,21 @@ leaseos/
 **P0 UX shell**
 - **Collapsible sidebar nav** with lucide icons; state persisted to localStorage
 - **Sticky topbar** with global search trigger
-- **⌘K command palette** — fuzzy search across leases / comparables / packs + quick-jump
+- **⌘K command palette** — fuzzy search across **properties** / leases / comparables / packs + quick-jump
 - **Notification bell** (stub for now)
 - **`/today` dashboard** — 5 KPI cards + "Action this week" + "Recent activity" feed; replaces the previous two-card landing
 - **Centralised `<StatusPill>`** component (deduplicates 3 colour maps)
 - **`<lib/humanise>`** layer — `fri` → `Full Repairing & Insuring`, `open_market` → `Open market`, etc.
+
+**P1 — Properties as a first-class entity** (just shipped)
+- **Property model** — first-class with normalised-address dedupe key, sector, landlord_client, notes
+- **Auto-link on extraction** — worker creates or matches a Property by lease's premises address
+- **Backfill script** — assigns existing leases to Properties + runs SQLite column migrations (no Alembic yet)
+- **`/properties` list** — table with search + group-by-client toggle, shows lease count + next event per property
+- **`/properties/[id]` detail** — lease history (one row per lease), upcoming events sidebar, inline edit for sector/client/notes
+- **Lease detail breadcrumbs** — now show `Home › Properties › [property] › Lease`
+- **Leases list** — new `Property` column linking to the property
+- **Properties section** in cmd-K palette
 
 **Integrations**
 - **Slack** via webhook (paste-and-go)
@@ -458,6 +472,9 @@ leaseos eval
 
 # Seed N8 comparables for the rent-review pack demo
 .venv/bin/python scripts/seed_n8_comparables.py
+
+# Backfill Properties for existing leases + add new Property columns
+.venv/bin/python scripts/backfill_properties.py
 ```
 
 ### 7.5 Frontend keyboard shortcuts

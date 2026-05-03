@@ -32,6 +32,8 @@ class LeaseSummary(BaseModel):
     extraction_model: str | None
     extraction_seconds: float | None
     document_count: int
+    property_id: str | None = None
+    property_address: str | None = None
 
 
 class LeaseDetail(LeaseSummary):
@@ -117,6 +119,8 @@ def get_lease(
         extraction_model=lease.extraction_model,
         extraction_seconds=lease.extraction_seconds,
         document_count=len(lease.documents),
+        property_id=lease.property_id,
+        property_address=lease.property.address if lease.property else None,
         record_json=lease.record_json,
         extraction_error=lease.extraction_error,
     )
@@ -213,4 +217,6 @@ def _to_summary(lease: Lease, *, document_count: int) -> LeaseSummary:
         extraction_model=lease.extraction_model,
         extraction_seconds=lease.extraction_seconds,
         document_count=document_count,
+        property_id=lease.property_id,
+        property_address=lease.property.address if lease.property else None,
     )

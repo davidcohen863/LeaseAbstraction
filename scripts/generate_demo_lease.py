@@ -309,6 +309,18 @@ def main() -> None:
             "fair and reasonable proportion of the premium attributable to the Premises.",
             s["body"],
         ),
+        Paragraph(
+            "10.2 The annual buildings insurance policy renewal date is <b>25 March</b> "
+            "in each year of the Term, the first such renewal falling on 25 March 2023 "
+            "and annually thereafter.",
+            s["body"],
+        ),
+        Paragraph(
+            "10.3 An Energy Performance Certificate (EPC) for the Premises rated &lsquo;C&rsquo; "
+            "(reference 0192-3847-1024-9201-3856) was issued on 12 April 2022 and "
+            "expires on <b>11 April 2032</b>.",
+            s["body"],
+        ),
         # ---- Service charge
         Paragraph("11. SERVICE CHARGE", s["h2"]),
         Paragraph(

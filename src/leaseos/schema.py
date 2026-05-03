@@ -192,6 +192,16 @@ class LeaseRecord(BaseModel):
     # cross-cutting
     rent_deposit_gbp: Optional[MoneyField] = None
 
+    # Compliance / operational dates (added v0.3 for the calendar)
+    insurance_renewal_date: Optional[DateField] = Field(
+        default=None,
+        description="Annual buildings insurance renewal date if explicitly stated in the lease or annex (e.g. 'insurance year ends 25 March'). Leave null if not stated.",
+    )
+    epc_expiry_date: Optional[DateField] = Field(
+        default=None,
+        description="EPC (Energy Performance Certificate) expiry date if stated. EPCs last 10 years. Leave null if not stated.",
+    )
+
     # extraction metadata (filled by the engine, not the model)
     source_document_filename: Optional[str] = None
     extraction_model: Optional[str] = None

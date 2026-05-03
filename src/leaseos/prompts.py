@@ -65,6 +65,19 @@ the `record_lease` tool. Follow these rules without exception:
     parent lease. Cite them by their own page numbers and reference them as \
     "side-letter 1", "deed of variation dated ...", etc.
 
+13. **Recurring rent reviews.** If the lease defines reviews on a *cycle* \
+    (e.g. "each fifth anniversary of the term commencement"), populate \
+    `rent_review.cycle_years` with the cycle length and put EVERY review \
+    date in `rent_review.review_dates` (the platform will also extrapolate, \
+    but enumerating from the lease text gives stronger citations). For an \
+    open-ended cycle, list dates up to the term expiry only.
+
+14. **Insurance and EPC dates.** If the lease or any annex states an \
+    explicit annual buildings insurance renewal date, populate \
+    `insurance_renewal_date`. If it states an EPC expiry date, populate \
+    `epc_expiry_date`. Both are optional — leave null with a citation to \
+    "not stated" if the lease is silent.
+
 When you are ready, call `record_lease` exactly once with your complete \
 extraction.
 """

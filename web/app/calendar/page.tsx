@@ -19,6 +19,7 @@ const EVENT_LABEL: Record<string, string> = {
   lease_expiry: "Lease expiry",
   deposit_return: "Deposit return",
   insurance_renewal: "Insurance renewal",
+  epc_expiry: "EPC expiry",
 };
 
 const EVENT_STYLE: Record<string, string> = {
@@ -28,7 +29,8 @@ const EVENT_STYLE: Record<string, string> = {
   break_date: "bg-amber-100 text-amber-800",
   lease_expiry: "bg-purple-100 text-purple-800",
   deposit_return: "bg-emerald-100 text-emerald-800",
-  insurance_renewal: "bg-neutral-100 text-neutral-700",
+  insurance_renewal: "bg-sky-100 text-sky-800",
+  epc_expiry: "bg-orange-100 text-orange-800",
 };
 
 interface YearGroup {

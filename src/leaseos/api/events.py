@@ -16,13 +16,67 @@ from ..schema import LeaseRecord
 from .models import EventType
 
 
-def _subtract_months(d: datetime, months: int) -> datetime:
-    """Subtract whole months without 30.5-day approximation. Clamps to last day."""
-    total = d.year * 12 + (d.month - 1) - months
+# ---- date helpers --------------------------------------------------------
+
+
+def _shift_months(d: datetime, months: int) -> datetime:
+    """Add (months > 0) or subtract (months < 0) whole months. Clamps to last day."""
+    total = d.year * 12 + (d.month - 1) + months
     year, month = divmod(total, 12)
     month += 1
     last_day = calendar.monthrange(year, month)[1]
     return d.replace(year=year, month=month, day=min(d.day, last_day))
+
+
+def _subtract_months(d: datetime, months: int) -> datetime:
+    return _shift_months(d, -months)
+
+
+def _add_months(d: datetime, months: int) -> datetime:
+    return _shift_months(d, months)
+
+
+def _to_dt(d: date | None) -> datetime | None:
+    if d is None:
+        return None
+    return datetime.combine(d, datetime.min.time())
+
+
+# ---- recurring-review expansion -----------------------------------------
+
+
+def _expand_review_dates(record: LeaseRecord) -> list[datetime]:
+    """If the lease has a cycle (e.g. 5-yearly) plus at least one explicit
+    review date plus a term expiry, generate every review date up to (but
+    not on) the expiry. If the model already enumerated them all, this is a
+    no-op deduplicated.
+    """
+    rr = record.rent_review
+    explicit = [_to_dt(d) for d in (rr.review_dates or []) if d is not None]
+    explicit_dts: list[datetime] = [d for d in explicit if d is not None]
+    if not explicit_dts:
+        return []
+    if not rr.cycle_years or rr.cycle_years <= 0:
+        return sorted(set(explicit_dts))
+    expiry = _to_dt(record.term_expiry.value) if record.term_expiry else None
+
+    out: set[datetime] = set(explicit_dts)
+    seed = min(explicit_dts)
+    cycle_months = int(rr.cycle_years) * 12
+    if expiry is None:
+        # No expiry to cap at — emit just the explicit ones
+        return sorted(out)
+
+    cur = _add_months(seed, cycle_months)
+    safety = 0
+    while cur < expiry and safety < 100:
+        out.add(cur)
+        cur = _add_months(cur, cycle_months)
+        safety += 1
+    return sorted(out)
+
+
+# ---- main API ------------------------------------------------------------
 
 
 @dataclass
@@ -31,12 +85,6 @@ class DerivedEvent:
     event_date: datetime
     title: str
     description: str
-
-
-def _to_dt(d: date | None) -> datetime | None:
-    if d is None:
-        return None
-    return datetime.combine(d, datetime.min.time())
 
 
 def derive_events(record: LeaseRecord) -> list[DerivedEvent]:
@@ -54,10 +102,11 @@ def derive_events(record: LeaseRecord) -> list[DerivedEvent]:
             )
         )
 
-    # Rent reviews — both the trigger (T-6mo) and the effective date
+    # Rent reviews — both the trigger (T-6mo) and the effective date.
+    # Expanded across the term using the cycle if the model only gave us one.
     rr = record.rent_review
-    for rd in rr.review_dates or []:
-        rd_dt = _to_dt(rd)
+    review_dts = _expand_review_dates(record)
+    for rd_dt in review_dts:
         out.append(
             DerivedEvent(
                 event_type=EventType.RENT_REVIEW_EFFECTIVE,
@@ -66,7 +115,6 @@ def derive_events(record: LeaseRecord) -> list[DerivedEvent]:
                 description=f"Review basis: {rr.basis.value if rr.basis else 'unknown'}.",
             )
         )
-        # Trigger pack 6 months ahead (proper month math)
         out.append(
             DerivedEvent(
                 event_type=EventType.RENT_REVIEW_TRIGGER,
@@ -76,7 +124,7 @@ def derive_events(record: LeaseRecord) -> list[DerivedEvent]:
             )
         )
 
-    # Tenant break + notice deadline
+    # Tenant + landlord break + notice deadline
     for brk_field in (record.tenant_break, record.landlord_break):
         if brk_field is None or brk_field.break_date is None:
             continue
@@ -104,8 +152,42 @@ def derive_events(record: LeaseRecord) -> list[DerivedEvent]:
                 )
             )
 
+    # Insurance renewal — annual recurrence from the stated date until expiry
+    if record.insurance_renewal_date and record.insurance_renewal_date.value:
+        first = _to_dt(record.insurance_renewal_date.value)
+        expiry = _to_dt(record.term_expiry.value) if record.term_expiry else None
+        cur = first
+        safety = 0
+        while cur is not None and (expiry is None or cur <= expiry) and safety < 30:
+            out.append(
+                DerivedEvent(
+                    event_type=EventType.INSURANCE_RENEWAL,
+                    event_date=cur,
+                    title=f"Insurance renewal — {label}",
+                    description="Annual buildings insurance renewal — collect tenant contribution.",
+                )
+            )
+            cur = _add_months(cur, 12)
+            safety += 1
+
+    # EPC expiry — single critical date
+    if record.epc_expiry_date and record.epc_expiry_date.value:
+        out.append(
+            DerivedEvent(
+                event_type=EventType.EPC_EXPIRY,
+                event_date=_to_dt(record.epc_expiry_date.value),
+                title=f"EPC expiry — {label}",
+                description="Energy Performance Certificate expires; new survey required for any new letting.",
+            )
+        )
+
     # Deposit return — at expiry
-    if record.rent_deposit_gbp and record.rent_deposit_gbp.value and record.term_expiry.value:
+    if (
+        record.rent_deposit_gbp
+        and record.rent_deposit_gbp.value
+        and record.term_expiry
+        and record.term_expiry.value
+    ):
         out.append(
             DerivedEvent(
                 event_type=EventType.DEPOSIT_RETURN,

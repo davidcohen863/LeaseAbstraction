@@ -47,6 +47,7 @@ class EventType(str, Enum):
     LEASE_EXPIRY = "lease_expiry"
     DEPOSIT_RETURN = "deposit_return"
     INSURANCE_RENEWAL = "insurance_renewal"
+    EPC_EXPIRY = "epc_expiry"
 
 
 class EventStatus(str, Enum):

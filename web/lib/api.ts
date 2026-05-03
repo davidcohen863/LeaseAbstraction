@@ -189,6 +189,28 @@ export const api = {
   acknowledgeEvent: (eventId: string, opts?: FetchOpts) =>
     call<LeaseEvent>(`/events/${eventId}/acknowledge`, { method: "POST", ...opts }),
 
+  // Integrations
+  integrationsStatus: (opts?: FetchOpts) =>
+    call<{
+      slack: { configured: boolean; channel_label?: string | null };
+      google: { connected: boolean; account_email?: string | null };
+      outlook: { connected: boolean; account_email?: string | null };
+    }>("/integrations/status", opts),
+  configureSlack: (
+    body: { webhook_url: string; channel_label?: string | null; digest_enabled?: boolean },
+    opts?: FetchOpts
+  ) =>
+    call<{ ok: boolean }>("/integrations/slack/configure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      ...opts,
+    }),
+  testSlack: (opts?: FetchOpts) =>
+    call<{ ok: boolean }>("/integrations/slack/test", { method: "POST", ...opts }),
+  runSlackDigest: (opts?: FetchOpts) =>
+    call<{ ok: boolean; sent: number }>("/integrations/slack/digest/run", { method: "POST", ...opts }),
+
   // Properties
   listProperties: (opts?: FetchOpts) =>
     call<PropertySummary[]>("/properties", opts),

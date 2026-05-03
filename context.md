@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after pack auto-trigger + Slack notify)
+- Last updated: 2026-05-03 (after the in-UI Slack form on /integrations)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -371,7 +371,14 @@ leaseos/
 - **Auto-derived events**: rent review (trigger + effective), break (notice + date), lease expiry, deposit return, **annual insurance renewal**, **EPC expiry** — with proper month-arithmetic (no 30.5-day approximation)
 - **Recurring rent reviews**: cycle expansion using `rent_review.cycle_years`
 
-**Pack auto-trigger + Slack notification** (just shipped)
+**`/integrations` page redesign** (just shipped)
+- Slack card now has a **proper in-UI form** — paste webhook URL + channel label + digest toggle, with a "How to get a webhook URL" inline guide that links to the Slack create-app page
+- **Send test message** + **Run digest now** quick actions appear once Slack is connected
+- Webhook URL is validated client-side (must start with `https://hooks.slack.com/`)
+- Status badges (Connected / Not connected) on every integration card
+- Google + Outlook cards show the connected account email when present
+
+**Pack auto-trigger + Slack notification** (shipped)
 - `POST /packs/auto-trigger?days_ahead=N` — finds every `rent_review_trigger` event in the horizon with no pack yet and queues generation; idempotent
 - `scripts/trigger_pending_packs.py` — cron-friendly script that hits the endpoint
 - `render.yaml` cron entry — runs daily at 06:00 UTC (180-day horizon)

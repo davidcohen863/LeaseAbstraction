@@ -205,7 +205,7 @@ Three connected, all built end-to-end.
 
 | Integration | Status | Notes |
 |---|---|---|
-| **Slack** (incoming webhook + daily digest) | ✅ code | Webhook UI is API-side fallback HTML — proper in-UI form is a P2 item |
+| **Slack** (incoming webhook + daily digest) | ✅ | Proper in-UI form on `/integrations` — paste URL, label channel, send test, run digest now |
 | **Google Calendar** OAuth + event push | ✅ code | OAuth client setup needed before live use |
 | **Outlook / Microsoft Graph** OAuth + event push | ✅ code | App registration on Entra needed before live use |
 
@@ -289,7 +289,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | **Pack auto-trigger + Slack notify** — `POST /packs/auto-trigger?days_ahead=N` (idempotent, finds events with no pack), daily Render cron (06:00 UTC, 180-day horizon), "Auto-trigger (N)" button on /reviews with confirm dialog showing estimated cost, `notify_pack_ready()` Slack message when each pack finishes (current rent, opening, settlement range, "Open pack" button), `scripts/trigger_pending_packs.py` for local cron / GitHub Actions |
+| (this commit) | **`/integrations` in-UI Slack form** — replaces the API-fallback HTML page with a proper form (paste webhook URL, label channel, digest toggle), inline "How to get a webhook URL" guide, Send test + Run digest now quick actions, status badges, account-email display for Google/Outlook |
+| `ff19710` | **Pack auto-trigger + Slack notify** — `POST /packs/auto-trigger?days_ahead=N` (idempotent, finds events with no pack), daily Render cron (06:00 UTC, 180-day horizon), "Auto-trigger (N)" button on /reviews with confirm dialog showing estimated cost, `notify_pack_ready()` Slack message when each pack finishes (current rent, opening, settlement range, "Open pack" button), `scripts/trigger_pending_packs.py` for local cron / GitHub Actions |
 | `4e2b306` | **P1 milestone complete** — Pack detail polish: Word-style typography (Georgia serif paper card), inline-editable headline numbers (Recommended opening / Settlement low / high) backed by new PATCH /packs/{id}, comparables-used drawer, uplift summary block when settled, status pill + breadcrumbs, doc-nav icons + canonical order |
 | `576326d` | P1 Comparables redesign — stats strip (count / median £/sq ft / P25–P75 range / median area / total rent), source + use-class filter dropdowns, sortable columns, coloured source badges, CSV import (drag/drop + per-row validation + bulk insert) + downloadable template, proper UK Use Classes select, `web/lib/csv.ts` mini-parser |
 | `f4aeb42` | P1 Lease-detail polish — 3-column layout (PDF / Fields / RightRail 280px), 8 collapsible field sections persisted to localStorage, citation pills (blue-bordered), PDF viewer toolbar with zoom + fit + page jump + scroll-driven current-page tracking, RightRail with Status + Approve + Critical Dates + Related quick links + Packs-for-this-lease + Document meta |

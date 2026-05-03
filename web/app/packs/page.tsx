@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
+import { Package } from "lucide-react";
 import { api, type PackSummary } from "@/lib/api";
+import { EmptyState } from "@/components/ui/empty-state";
 import { StatusPill } from "@/components/ui/status-pill";
 
 export default function PacksListPage() {
@@ -39,12 +41,16 @@ export default function PacksListPage() {
       {packs === null ? (
         <div className="text-sm text-neutral-500">Loading…</div>
       ) : packs.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-12 text-center">
-          <div className="text-neutral-700 font-medium">No packs yet</div>
-          <p className="text-sm text-neutral-500 mt-1">
-            Open a lease and click <span className="font-medium">Generate review pack</span> on its rent-review event.
-          </p>
-        </div>
+        <EmptyState
+          icon={Package}
+          title="No review packs yet"
+          description="A pack contains the landlord memo, comparables schedule, ITZA analysis, and trigger letter. They auto-generate at T-6 months before each rent review, or you can trigger one manually from the calendar."
+          actions={[
+            { label: "Open the Reviews kanban", href: "/reviews", variant: "primary" },
+            { label: "View the Calendar", href: "/calendar", variant: "secondary" },
+          ]}
+          hint="The auto-trigger cron runs daily at 06:00 UTC."
+        />
       ) : (
         <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
           <table className="w-full text-sm">

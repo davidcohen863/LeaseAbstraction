@@ -345,4 +345,30 @@ export const api = {
       body: JSON.stringify({ settled_rent_gbp }),
       ...opts,
     }),
+
+  // Audit
+  listAudit: (params?: { limit?: number }, opts?: FetchOpts) => {
+    const qs = new URLSearchParams();
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return call<AuditEntry[]>(`/audit${suffix}`, opts);
+  },
+  listLeaseAudit: (leaseId: string, params?: { limit?: number }, opts?: FetchOpts) => {
+    const qs = new URLSearchParams();
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return call<AuditEntry[]>(`/leases/${leaseId}/audit${suffix}`, opts);
+  },
 };
+
+export interface AuditEntry {
+  id: string;
+  kind: "field_edit" | "lease_approved";
+  lease_id: string;
+  lease_label: string;
+  actor_user_id: string | null;
+  created_at: string;
+  field_path?: string | null;
+  before_value?: unknown;
+  after_value?: unknown;
+}

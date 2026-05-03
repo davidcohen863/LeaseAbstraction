@@ -264,10 +264,11 @@ def microsoft_callback(
 
 
 def _post_oauth_redirect() -> RedirectResponse:
-    """After OAuth, send the user back to the frontend integrations page."""
+    """After OAuth, send the user back to the frontend integrations page
+    (now under /settings/integrations as of the Settings hub work)."""
     settings = get_settings()
     target = settings.cors_origins[0] if settings.cors_origins else "http://localhost:3000"
-    return RedirectResponse(f"{target}/integrations?connected=1")
+    return RedirectResponse(f"{target}/settings/integrations?connected=1")
 
 
 # ---- Event push ----------------------------------------------------------

@@ -180,19 +180,19 @@ Detailed brief: [`UX_PLAN.md` §6 + §7](./UX_PLAN.md).
 
 ### 4.4 P2 — Polish + power-user (~1 week scope)
 
-**Status: 📋 planned.**
+**Status: 🚧 partially shipped — see below.**
 
 | Item | Status |
 |---|---|
-| Settings hub at `/settings` (Profile, Firm, Integrations, Templates, Members, Audit log) | 📋 |
+| Settings hub at `/settings` (Profile, Firm, Integrations, Templates, Members, Audit log) | ✅ |
 | Per-firm Word .docx template upload (used by pack generator) | 📋 |
-| Activity feed on lease detail (render existing `FieldEdit` audit table) | 📋 |
-| Bounding-box highlight on citation click (PDF) | 📋 |
-| Keyboard navigation in reviewer (j/k between flagged fields) | 📋 |
-| Empty states with sample-data CTAs everywhere | 📋 |
+| Activity feed on lease detail (render existing `FieldEdit` audit table) | ✅ |
+| Bounding-box highlight on citation click (PDF) | 📋 (needs bbox in extraction first) |
+| Keyboard navigation in reviewer (j/k between flagged fields) | ✅ |
+| Empty states with sample-data CTAs everywhere | 🚧 (shared `<EmptyState>`; rolled out on /packs + reviews; rest still bespoke) |
 | Accessibility audit (axe + keyboard-only run) | 📋 |
-| In-UI Slack form + connection-test feedback + disconnect on `/settings/integrations` | 📋 |
-| Workspace switcher in topbar (multi-tenant prep) | 📋 |
+| In-UI Slack form + connection-test feedback + disconnect on `/settings/integrations` | ✅ (shipped in P1, now lives under /settings) |
+| Workspace switcher in topbar (multi-tenant prep) | 📋 (post-pilot) |
 | Notification backend + bell unread count | 📋 |
 
 Detailed brief: [`UX_PLAN.md` §6.9 + §7](./UX_PLAN.md).
@@ -238,7 +238,7 @@ When ready to ship: see [`DEPLOY.md`](./DEPLOY.md).
 
 | Item | Status | Notes |
 |---|---|---|
-| pytest suite for backend | ✅ | 90 tests (was 78) — added Fernet round-trip, prod CORS assertion, sandbox file serving, render_docx markdown→.docx coverage. ~1.4s. |
+| pytest suite for backend | ✅ | 98 tests (was 90) — added audit feed coverage (FieldEdit + lease-approval synthesis, lease-scoped filter, limit cap, mixed sort). ~1.6s. |
 | Playwright smoke test for frontend | 📋 | Critical-path: upload → review → approve → pack |
 | Eval harness with 50-lease ground-truth corpus | 📋 | Stub exists at `eval/` — needs real leases (NDA-blocked until Claridges shares) |
 | **OAuth state in DB (H3)** | ✅ | New `oauth_states` table + Alembic revision `9f3b21ec0a40`; `_new_state` / `_consume_state` now Postgres-backed; survives restart + works across multiple workers; rows GC after 15 min |
@@ -293,7 +293,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | **L-tier cleanup** — six items from the CODE_REVIEW.md follow-up list landed together: (L1) `datetime.utcnow()` replaced everywhere with new `utc_now()` helper from `src/leaseos/utils.py` (deprecation warnings cleared, naive-UTC for SQLAlchemy compatibility); (L2) `Cache-Control: no-store` middleware on every API response so a different signed-in user can't pull a previous user's data from the disk cache; (L5) raw-string enum comparisons (`"rent_review_trigger"`, `"upcoming"`) swapped for `EventType`/`EventStatus` enum values; (L6) dead `use_class` filter branch in `web/app/comparables/page.tsx` removed and the surviving branch's intent documented; (L8) 12 new tests for `pack_generator.render_docx` / `_render_table` / `_add_inline_runs` (headings, bullets, bold, ragged tables, empty input); (L9) the 100-cycle safety cap in `_expand_review_dates` now has a docstring explaining it exists for a `cycle_months=0` runaway, not because real leases approach it. 90/90 tests passing (was 78). |
+| (this commit) | **P2 UX milestone** — Settings hub at `/settings` with sub-tab layout + six pages (Profile via Clerk's `UserProfile` lazy-imported, Firm metadata in localStorage, Integrations moved here from top nav, Templates + Members placeholders that explain the deferral, Audit log searchable + kind-filtered). New `routes/audit.py` exposes `GET /audit` (firm-wide) + `GET /leases/{id}/audit` (per-lease) — synthesises a unified feed from `FieldEdit` rows + `Lease.approved_at`, sorted newest-first. Lease-detail RightRail gains an Activity panel showing the last 8 events for that lease. FieldsPanel grows j/k keyboard nav between flagged fields with auto-scroll + auto-expand + amber focus ring + ? cheat sheet (bails on input/textarea so it never steals typing). Sidebar swaps top-level "Integrations" for "Settings"; bare `/integrations` redirects to `/settings/integrations`. Shared `<EmptyState>` (icon + title + description + primary/secondary actions + hint) replaces bespoke empty cards on `/packs` and the reviews kanban (each column now has a purpose-specific hint). 8 new audit tests; 98/98 passing (was 90); frontend `tsc --noEmit` clean. |
+| `fdb6528` | **L-tier cleanup** — six items from the CODE_REVIEW.md follow-up list landed together: (L1) `datetime.utcnow()` replaced everywhere with new `utc_now()` helper from `src/leaseos/utils.py` (deprecation warnings cleared, naive-UTC for SQLAlchemy compatibility); (L2) `Cache-Control: no-store` middleware on every API response so a different signed-in user can't pull a previous user's data from the disk cache; (L5) raw-string enum comparisons (`"rent_review_trigger"`, `"upcoming"`) swapped for `EventType`/`EventStatus` enum values; (L6) dead `use_class` filter branch in `web/app/comparables/page.tsx` removed and the surviving branch's intent documented; (L8) 12 new tests for `pack_generator.render_docx` / `_render_table` / `_add_inline_runs` (headings, bullets, bold, ragged tables, empty input); (L9) the 100-cycle safety cap in `_expand_review_dates` now has a docstring explaining it exists for a `cycle_months=0` runaway, not because real leases approach it. 90/90 tests passing (was 78). |
 | `4e3e983` | **M-tier security hardening** — five fixes from `CODE_REVIEW.md` follow-up list landed together: (M4) prod CORS startup assertion in `main._assert_safe_prod_config()` blocks misconfigured boot when `LEASEOS_ENV=prod`; (M2/M3) `selectinload` on Lease + Property relationships kills N+1 on list endpoints; (M8) pack-document download routed through shared `security.serve_inside_sandbox` + ownership check on `pack_id` URL parameter; (M7) Slack webhook URLs encrypted at rest with Fernet (new `crypto.py`, `enc:v1:` wire prefix, `LEASEOS_SECRET_KEY` env var required in prod); (H3) OAuth CSRF state moved out of in-process `_STATES` dict into new `oauth_states` table (Alembic `9f3b21ec0a40`). New shared modules: `api/crypto.py`, `api/security.py`. 12 new tests (78/78 total). DEPLOY.md updated with `LEASEOS_SECRET_KEY` instructions. |
 | `77f1970` | **Alembic migrations** — `alembic/` initialised with env.py that reads DATABASE_URL from settings + imports models for autogenerate; baseline migration captures all 11 tables; dev-drift-cleanup migration tightens the NOT NULL + server_default constraints that the early hand-applied ALTER TABLEs missed; Dockerfile CMD now runs `alembic upgrade head` before serving (idempotent); `scripts/db.sh` wrapper (upgrade / current / history / new / check); DEPLOY.md updated; tests still 66/66. |
 | `2707922` | Fix /properties 500 error: defensive `updated_at` fallback in route + worker explicitly sets created_at/updated_at on new Property rows + backfill NULLs |

@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after L-tier cleanup: utc_now helper replaces datetime.utcnow, Cache-Control no-store middleware, enum-consistency fixes, render_docx tests)
+- Last updated: 2026-05-03 (after P2 UX milestone: Settings hub at /settings, audit log + activity feed, j/k keyboard nav in reviewer, polished empty states)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -302,6 +302,7 @@ leaseos/
         comparables.py       # CRUD for market evidence
         packs.py             # Generate / list / detail / download / settle packs
         integrations.py      # Slack config + Google/Microsoft OAuth + event push
+        audit.py             # Read-only feed of FieldEdit + lease approvals (P2)
     integrations/
       slack.py               # Webhook digest sender
       google.py              # Google Calendar OAuth + event push
@@ -331,13 +332,22 @@ leaseos/
       packs/[id]/page.tsx    # P1 — Word-style typography preview (Georgia serif, paper card),
                              #   inline-editable opening/settlement numbers, comparables drawer,
                              #   uplift summary block when settled
-      integrations/page.tsx  # Slack/Google/Outlook status cards
+      integrations/page.tsx  # Backward-compat redirect → /settings/integrations
+      settings/              # P2 — Settings hub
+        layout.tsx           #   Sub-tab nav (Profile/Firm/Integrations/Templates/Members/Audit)
+        profile/page.tsx     #   Clerk UserProfile (lazy-imported, optional Clerk gate)
+        firm/page.tsx        #   Firm name/address/default surveyor (localStorage v1)
+        integrations/page.tsx #  Slack/Google/Outlook (moved from top nav)
+        templates/page.tsx   #   Word .docx upload — coming soon
+        members/page.tsx     #   Multi-user — coming soon
+        audit/page.tsx       #   Searchable read-only audit feed
     components/
       nav/sidebar.tsx        # Collapsible sidebar nav (persists state)
       nav/topbar.tsx         # Sticky topbar with search trigger + user menu
       nav/notification-bell.tsx
       ui/status-pill.tsx     # Centralised colour-coded status component
       ui/command-palette.tsx # ⌘K global search (cmdk)
+      ui/empty-state.tsx     # P2 — shared empty-state card (icon, title, description, actions, hint)
       calendar/month-grid.tsx   # P1 — 7-col month grid (date-fns, no library)
       calendar/event-drawer.tsx # P1 — slide-in drawer for event detail + actions
     lib/
@@ -623,6 +633,19 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.3 P2 UX milestone (landed 2026-05-03)
+
+The full plan is in `UX_PLAN.md` §6.9 + §7-P2. What landed in this batch:
+
+- ✅ **Settings hub** at `/settings` with sub-tab layout (`layout.tsx`) + six sub-pages: Profile (Clerk `UserProfile`, lazy-imported), Firm (name/address/default surveyor in localStorage), Integrations (moved from top nav), Templates (placeholder + per-doc cards), Members (placeholder explaining multi-user is post-pilot), Audit log.
+- ✅ **`GET /audit`** + **`GET /leases/{id}/audit`** endpoints in new `routes/audit.py` — pagination-capped feed of FieldEdit + lease approvals (synthesised from `Lease.approved_at`), interleaved + sorted newest-first. 8 new tests.
+- ✅ **Settings → Audit log** page with filter (search by lease/field/user, kind segmented filter), inline before→after diff with strikethrough, deep-links to lease detail.
+- ✅ **Activity panel** in lease-detail RightRail showing the last 8 events for that lease (compact diff, "View all" link to firm-wide audit).
+- ✅ **j/k keyboard nav** in the FieldsPanel: jumps focus between flagged (low-confidence) fields with auto-scroll + auto-expand of collapsed sections + amber focus ring. `?` toggles a cheat sheet. Bails on input/textarea so it never steals typing.
+- ✅ **Sidebar** swaps top-level "Integrations" for "Settings" (matches `/settings/*`); the bare `/integrations` URL now redirects to `/settings/integrations` (preserves the OAuth callback's `?connected=1` query string).
+- ✅ **Polished empty states** — new shared `<EmptyState>` (icon + title + description + 1–2 actions + optional hint) used on `/packs`; reviews kanban columns now show purpose-specific hints instead of generic "Empty".
+- 78 → 98 backend tests passing.
 
 ### 9.4.2 L-tier cleanup (landed 2026-05-03)
 

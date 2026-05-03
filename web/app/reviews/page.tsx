@@ -33,11 +33,14 @@ interface PackCard {
 
 type Card = PendingCard | PackCard;
 
-const COLUMN_META: Record<ColumnKey, { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; tone: string }> = {
-  pending: { label: "Pack pending",  icon: Clock,         tone: "border-t-neutral-400" },
-  draft:   { label: "Draft",         icon: Package,       tone: "border-t-blue-600" },
-  sent:    { label: "Sent",          icon: Send,          tone: "border-t-violet-600" },
-  settled: { label: "Settled",       icon: CheckCircle2,  tone: "border-t-emerald-600" },
+const COLUMN_META: Record<
+  ColumnKey,
+  { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; tone: string; emptyHint: string }
+> = {
+  pending: { label: "Pack pending",  icon: Clock,         tone: "border-t-neutral-400", emptyHint: "No reviews approaching in the next 180 days." },
+  draft:   { label: "Draft",         icon: Package,       tone: "border-t-blue-600",    emptyHint: "Generated packs land here for review." },
+  sent:    { label: "Sent",          icon: Send,          tone: "border-t-violet-600",  emptyHint: "Click \u2018Mark sent\u2019 once you\u2019ve emailed the trigger letter." },
+  settled: { label: "Settled",       icon: CheckCircle2,  tone: "border-t-emerald-600", emptyHint: "Record the settled rent on a draft pack to feed comparables." },
 };
 
 export default function ReviewsBoard() {
@@ -286,8 +289,8 @@ function Column({
       </header>
       <div className="flex-1 space-y-2 px-2 pb-2">
         {cards.length === 0 ? (
-          <div className="rounded border border-dashed border-neutral-300 bg-white px-3 py-6 text-center text-xs text-neutral-400">
-            Empty
+          <div className="rounded border border-dashed border-neutral-300 bg-white px-3 py-6 text-center text-xs text-neutral-500">
+            {meta.emptyHint}
           </div>
         ) : (
           cards.map((c) => (

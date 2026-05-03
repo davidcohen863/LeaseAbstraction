@@ -17,6 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import get_settings
 from .db import init_db
+from .routes import audit as audit_routes
 from .routes import comparables as comparables_routes
 from .routes import events as events_routes
 from .routes import integrations as integrations_routes
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(comparables_routes.router)
     app.include_router(packs_routes.router)
     app.include_router(properties_routes.router)
+    app.include_router(audit_routes.router)
     return app
 
 

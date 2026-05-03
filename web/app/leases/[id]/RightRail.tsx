@@ -20,6 +20,7 @@ import {
 import {
   api,
   type AncillaryDocumentRole,
+  type AuditEntry,
   type DocumentOut,
   type LeaseDetail,
   type LeaseEvent,
@@ -44,6 +45,7 @@ export function RightRail({ lease, onApprove, onChanged }: Props) {
   const router = useRouter();
   const [events, setEvents] = useState<LeaseEvent[] | null>(null);
   const [packs, setPacks] = useState<PackSummary[] | null>(null);
+  const [activity, setActivity] = useState<AuditEntry[] | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
 
@@ -54,11 +56,13 @@ export function RightRail({ lease, onApprove, onChanged }: Props) {
         .then((all) => all.filter((e) => e.lease_id === lease.id))
         .catch(() => [] as LeaseEvent[]),
       api.listPacks({ lease_id: lease.id }).catch(() => [] as PackSummary[]),
-    ]).then(([e, p]) => {
+      api.listLeaseAudit(lease.id, { limit: 8 }).catch(() => [] as AuditEntry[]),
+    ]).then(([e, p, a]) => {
       setEvents(e);
       setPacks(p);
+      setActivity(a);
     });
-  }, [lease.id]);
+  }, [lease.id, lease.updated_at]);
 
   const critical = (events ?? [])
     .filter((e) => CRITICAL_TYPES.has(e.event_type))
@@ -227,6 +231,9 @@ export function RightRail({ lease, onApprove, onChanged }: Props) {
           </ul>
         )}
       </section>
+
+      {/* Activity */}
+      <ActivityPanel entries={activity} />
 
       {/* Document meta */}
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
@@ -436,6 +443,76 @@ function AncillaryItem({ doc, leaseId, onChanged }: { doc: DocumentOut; leaseId:
       )}
     </li>
   );
+}
+
+function ActivityPanel({ entries }: { entries: AuditEntry[] | null }) {
+  return (
+    <section className="rounded-lg border border-neutral-200 bg-white p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Activity
+        </div>
+        {entries && entries.length > 0 && (
+          <Link href="/settings/audit" className="text-[11px] text-blue-700 hover:underline">
+            View all
+          </Link>
+        )}
+      </div>
+      {entries === null ? (
+        <div className="text-xs text-neutral-400">Loading…</div>
+      ) : entries.length === 0 ? (
+        <p className="text-xs text-neutral-500">
+          No edits or approvals yet. Reviewer changes will show up here.
+        </p>
+      ) : (
+        <ol className="space-y-2">
+          {entries.map((e) => (
+            <li key={e.id} className="text-xs">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-neutral-800">
+                  {e.kind === "lease_approved" ? "Approved" : (e.field_path ?? "Edit")}
+                </span>
+                <span
+                  className="text-[10px] tabular-nums text-neutral-400"
+                  title={new Date(e.created_at).toLocaleString()}
+                >
+                  {shortAgo(new Date(e.created_at))}
+                </span>
+              </div>
+              {e.kind === "field_edit" && (
+                <div className="mt-0.5 truncate text-[11px] text-neutral-500">
+                  {fmtCompact(e.before_value)} → <span className="text-neutral-700">{fmtCompact(e.after_value)}</span>
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function fmtCompact(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "string") return v.length > 30 ? v.slice(0, 30) + "…" : v;
+  try {
+    const s = JSON.stringify(v);
+    return s.length > 30 ? s.slice(0, 30) + "…" : s;
+  } catch {
+    return String(v);
+  }
+}
+
+function shortAgo(d: Date): string {
+  const sec = Math.round((Date.now() - d.getTime()) / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `${day}d`;
+  return d.toLocaleDateString();
 }
 
 function QuickLink({

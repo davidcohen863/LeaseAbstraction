@@ -9,7 +9,7 @@ import {
   CalendarDays,
   BarChart3,
   Package,
-  Plug,
+  Settings,
   ChevronLeft,
   ChevronRight,
   Briefcase,
@@ -36,7 +36,7 @@ const PRIMARY_NAV: NavItem[] = [
 ];
 
 const SECONDARY_NAV: NavItem[] = [
-  { href: "/integrations", label: "Integrations", icon: Plug },
+  { href: "/settings", label: "Settings", icon: Settings, matchPrefix: "/settings" },
 ];
 
 const STORAGE_KEY = "leaseos.sidebar.collapsed";

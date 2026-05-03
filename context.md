@@ -2,11 +2,11 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the P1 Reviews kanban)
+- Last updated: 2026-05-03 (after the P1 Leases-list redesign)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
-- Status: **v0.6 working locally — extraction + reviewer + calendar (month + list) + reviews kanban + pack generator + sidebar/Today shell + Properties first-class entity.** Pre-deploy.
+- Status: **v0.7 working locally — extraction + reviewer + calendar (month + list) + reviews kanban + pack generator + sidebar/Today shell + Properties first-class + leases list with filters/sort/group/bulk.** Pre-deploy.
 
 > **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship.
 
@@ -309,7 +309,9 @@ leaseos/
       properties/page.tsx    # P1 — list grouped by client, search
       properties/[id]/page.tsx  # P1 — lease history, upcoming events, edit metadata
       reviews/page.tsx       # P1 — kanban board (Pending / Draft / Sent / Settled)
-      leases/page.tsx        # Upload + polling list with live search + Property column
+      leases/page.tsx        # P1 — list with filter rail (status, critical-only),
+                             #   sortable columns, group-by (status/property/client),
+                             #   bulk-select + CSV export, search across label/property/client
       leases/[id]/           # Reviewer split-screen (PdfViewer + FieldsPanel)
       calendar/page.tsx      # All events grouped by year, with soon/overdue states
       comparables/page.tsx   # Market evidence table + add form
@@ -367,12 +369,21 @@ leaseos/
 - Settled rent feeds back to comparables as an internal data point
 - ~£0.20 per pack on Sonnet 4.6 with prompt caching
 
-**Reviews kanban board** (P1, just shipped)
+**Reviews kanban board** (P1)
 - `/reviews` — 4-column board: **Pack pending** (rent_review_trigger events with no pack) → **Draft** → **Sent** → **Settled**
 - Pending cards show trigger date + days until/since + Generate-pack button
 - Pack cards show current rent, recommended opening, and on-card "Mark sent" action
 - Settled cards show settled rent + uplift % in green
 - Polls every 4s while any pack is in `generating` state
+
+**Leases list redesign** (P1, just shipped)
+- **Filter rail (left)**: multi-checkbox status filter + "Critical event ≤ 90d" toggle + group-by selector
+- **Sortable columns**: click any header to sort by Label / Property / Client / Status / Uploaded
+- **Group-by** dropdown — None / Status / Property / Client (sticky section headings)
+- **Bulk select** — checkbox column + select-all-in-group + selection counter + **CSV export** for the selected rows
+- **Critical badge** column — at-a-glance days-until-next-critical-event, red if ≤30d, amber if ≤90d
+- **Property + Client columns** — pulls property's landlord_client via /properties join
+- Search now matches across label / property address / client name
 
 **Comparables**
 - Manual CRUD (paste-from-EGi style) at `/comparables`

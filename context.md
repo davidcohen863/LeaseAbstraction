@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the P1 Pack-detail polish — P1 complete)
+- Last updated: 2026-05-03 (after pack auto-trigger + Slack notify)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -347,6 +347,7 @@ leaseos/
     rederive_events.py         # Re-derive LeaseEvent rows without re-extraction
     seed_n8_comparables.py     # Seed 5 fictional N8 retail comparables
     backfill_properties.py     # P1 — assign existing leases to Property rows + run column migrations
+    trigger_pending_packs.py   # Cron-friendly POST to /packs/auto-trigger
   data/                      # Local SQLite DB + uploaded documents + generated packs (gitignored)
   Dockerfile                 # Production image for the API
   render.yaml                # Render Blueprint (API + Postgres + nightly cron)
@@ -369,6 +370,13 @@ leaseos/
 - **Type filter chips** at top of calendar — toggle individual event types on/off
 - **Auto-derived events**: rent review (trigger + effective), break (notice + date), lease expiry, deposit return, **annual insurance renewal**, **EPC expiry** — with proper month-arithmetic (no 30.5-day approximation)
 - **Recurring rent reviews**: cycle expansion using `rent_review.cycle_years`
+
+**Pack auto-trigger + Slack notification** (just shipped)
+- `POST /packs/auto-trigger?days_ahead=N` — finds every `rent_review_trigger` event in the horizon with no pack yet and queues generation; idempotent
+- `scripts/trigger_pending_packs.py` — cron-friendly script that hits the endpoint
+- `render.yaml` cron entry — runs daily at 06:00 UTC (180-day horizon)
+- "Auto-trigger (N)" button on `/reviews` — confirm dialog with estimated API spend, then runs the same endpoint
+- Pack worker now calls `notify_pack_ready()` on success — Slack message with current rent, recommended opening, settlement range, and an "Open pack" button linking to the deep URL
 
 **Rent-review pack generator** (the killer feature)
 - **One-click pack generation** from any rent-review event

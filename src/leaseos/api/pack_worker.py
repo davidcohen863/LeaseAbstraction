@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..integrations.slack import notify_pack_ready
 from ..pack_generator import generate_pack, render_docx
 from .config import get_settings
 from .db import SessionLocal
@@ -144,5 +145,13 @@ def run_pack_generation(pack_id: str) -> None:
 
         db.commit()
         log.info("Pack %s generated successfully (%.1fs, %d comps)", pack.id, result.elapsed_seconds, len(comparables))
+
+        # Slack notification — non-fatal if it fails
+        try:
+            settings = get_settings()
+            frontend_base = settings.cors_origins[0] if settings.cors_origins else None
+            notify_pack_ready(db, pack, lease.label, frontend_base=frontend_base)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Slack notify failed for pack %s: %s", pack.id, exc)
     finally:
         db.close()

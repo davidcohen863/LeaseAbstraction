@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -113,6 +113,75 @@ def _detail(pack: RentReviewPack, lease_label: str | None) -> PackDetail:
 
 
 # ---- endpoints -----------------------------------------------------------
+
+
+class AutoTriggerResult(BaseModel):
+    triggered: int
+    pack_ids: list[str]
+    horizon_days: int
+    candidates_seen: int
+
+
+@router.post("/packs/auto-trigger", response_model=AutoTriggerResult, status_code=202, tags=["packs"])
+def auto_trigger_packs(
+    background: BackgroundTasks,
+    days_ahead: int = Query(default=180, ge=1, le=365),
+    dry_run: bool = Query(default=False),
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> AutoTriggerResult:
+    """Find every `rent_review_trigger` event whose date is in the next
+    `days_ahead` days AND has no pack yet, then queue pack generation for each.
+
+    Idempotent: events that already have a pack are skipped. Safe to call from
+    a daily cron, the UI button, or a manual smoke test.
+
+    Set `dry_run=true` to count candidates without actually generating.
+    """
+    now = datetime.utcnow()
+    horizon = now + timedelta(days=days_ahead)
+
+    candidate_events = db.execute(
+        select(LeaseEvent)
+        .where(LeaseEvent.event_type == "rent_review_trigger")
+        .where(LeaseEvent.event_date >= now - timedelta(days=14))
+        .where(LeaseEvent.event_date <= horizon)
+    ).scalars().all()
+
+    # Set of event_ids that already have a pack
+    existing_event_ids = {
+        eid for (eid,) in db.execute(
+            select(RentReviewPack.lease_event_id).where(RentReviewPack.lease_event_id.is_not(None))
+        ).all()
+        if eid is not None
+    }
+
+    pack_ids: list[str] = []
+    for event in candidate_events:
+        if event.id in existing_event_ids:
+            continue
+        if dry_run:
+            pack_ids.append("(dry-run)")
+            continue
+        pack = RentReviewPack(
+            lease_id=event.lease_id,
+            lease_event_id=event.id,
+            status=PackStatus.GENERATING.value,
+        )
+        db.add(pack)
+        db.flush()
+        pack_ids.append(pack.id)
+        background.add_task(run_pack_generation, pack.id)
+
+    if not dry_run and pack_ids:
+        db.commit()
+
+    return AutoTriggerResult(
+        triggered=len(pack_ids),
+        pack_ids=pack_ids,
+        horizon_days=days_ahead,
+        candidates_seen=len(candidate_events),
+    )
 
 
 @router.post("/events/{event_id}/pack", response_model=PackSummary, status_code=201)

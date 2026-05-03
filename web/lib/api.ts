@@ -235,6 +235,19 @@ export const api = {
   // Packs
   generatePackForEvent: (eventId: string, opts?: FetchOpts) =>
     call<PackSummary>(`/events/${eventId}/pack`, { method: "POST", ...opts }),
+  autoTriggerPacks: (
+    params?: { days_ahead?: number; dry_run?: boolean },
+    opts?: FetchOpts
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.days_ahead != null) qs.set("days_ahead", String(params.days_ahead));
+    if (params?.dry_run) qs.set("dry_run", "true");
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return call<{ triggered: number; pack_ids: string[]; horizon_days: number; candidates_seen: number }>(
+      `/packs/auto-trigger${suffix}`,
+      { method: "POST", ...opts }
+    );
+  },
   listPacks: (params?: { lease_id?: string }, opts?: FetchOpts) => {
     const qs = new URLSearchParams();
     if (params?.lease_id) qs.set("lease_id", params.lease_id);

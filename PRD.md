@@ -99,7 +99,7 @@ What it does: when a rent review is approaching, the surveyor clicks "Generate p
 | Settlement modal (no more `window.prompt`) | ✅ | Quick-win commit `8fbf753` |
 
 **Deferred (post-v1):**
-- 📋 Auto-trigger cron (find `rent_review_trigger` events whose date ≤ today + N days, no pack yet → generate + Slack notify)
+- ✅ Auto-trigger cron + Slack notification (just shipped — `POST /packs/auto-trigger`, daily Render cron, "Auto-trigger (N)" UI button)
 - 📋 Per-firm house-style template upload
 - 📋 Proper Zone-A/B masking for ITZA (model's qualitative analysis is enough for v1)
 - 📋 Comparables auto-scrape from EGi/Rightmove (manual paste fine for pilot)
@@ -264,7 +264,7 @@ Current todo state at top of stack:
 
 **P1 milestone complete.** Next-up candidates from elsewhere on the roadmap:
 - 📋 Two-pass extraction with disagreement-based confidence (original PRD §1)
-- 📋 Auto-trigger cron + Slack notification for pack generation (§3 deferred)
+- ✅ Auto-trigger cron + Slack notification for pack generation
 - 📋 Begin **P2 — Polish + power-user** (Settings hub, Audit log, bbox highlight, j/k keyboard nav, in-UI Slack form)
 - 📋 Deploy (paused)
 
@@ -289,7 +289,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | **P1 milestone complete** — Pack detail polish: Word-style typography (Georgia serif paper card), inline-editable headline numbers (Recommended opening / Settlement low / high) backed by new PATCH /packs/{id}, comparables-used drawer, uplift summary block when settled, status pill + breadcrumbs, doc-nav icons + canonical order |
+| (this commit) | **Pack auto-trigger + Slack notify** — `POST /packs/auto-trigger?days_ahead=N` (idempotent, finds events with no pack), daily Render cron (06:00 UTC, 180-day horizon), "Auto-trigger (N)" button on /reviews with confirm dialog showing estimated cost, `notify_pack_ready()` Slack message when each pack finishes (current rent, opening, settlement range, "Open pack" button), `scripts/trigger_pending_packs.py` for local cron / GitHub Actions |
+| `4e2b306` | **P1 milestone complete** — Pack detail polish: Word-style typography (Georgia serif paper card), inline-editable headline numbers (Recommended opening / Settlement low / high) backed by new PATCH /packs/{id}, comparables-used drawer, uplift summary block when settled, status pill + breadcrumbs, doc-nav icons + canonical order |
 | `576326d` | P1 Comparables redesign — stats strip (count / median £/sq ft / P25–P75 range / median area / total rent), source + use-class filter dropdowns, sortable columns, coloured source badges, CSV import (drag/drop + per-row validation + bulk insert) + downloadable template, proper UK Use Classes select, `web/lib/csv.ts` mini-parser |
 | `f4aeb42` | P1 Lease-detail polish — 3-column layout (PDF / Fields / RightRail 280px), 8 collapsible field sections persisted to localStorage, citation pills (blue-bordered), PDF viewer toolbar with zoom + fit + page jump + scroll-driven current-page tracking, RightRail with Status + Approve + Critical Dates + Related quick links + Packs-for-this-lease + Document meta |
 | `f686136` | **Fix .gitignore bug** — `leases/` was matching `web/app/leases/`, so the lease UI files (page, [id], FieldsPanel, PdfViewer) had never been pushed. Anchored `/leases/`, `/data/`, `/output/`. Lease UI files now properly committed |

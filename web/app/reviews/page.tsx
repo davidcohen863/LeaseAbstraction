@@ -11,6 +11,7 @@ import {
   Send,
   CheckCircle2,
   Clock,
+  Sparkles,
 } from "lucide-react";
 import { api, type LeaseEvent, type PackSummary } from "@/lib/api";
 
@@ -79,12 +80,18 @@ export default function ReviewsBoard() {
             Every rent review across the portfolio, by stage. Click into any card to act.
           </p>
         </div>
-        <Link
-          href="/calendar"
-          className="text-sm text-neutral-600 hover:text-neutral-900"
-        >
-          View on calendar →
-        </Link>
+        <div className="flex items-center gap-3">
+          <AutoTriggerButton
+            pendingCount={columns.pending.length}
+            onTriggered={() => void load()}
+          />
+          <Link
+            href="/calendar"
+            className="text-sm text-neutral-600 hover:text-neutral-900"
+          >
+            View on calendar →
+          </Link>
+        </div>
       </header>
 
       {error && (
@@ -106,6 +113,89 @@ export default function ReviewsBoard() {
         </div>
       )}
     </div>
+  );
+}
+
+// ---- auto-trigger button ------------------------------------------------
+
+function AutoTriggerButton({
+  pendingCount,
+  onTriggered,
+}: {
+  pendingCount: number;
+  onTriggered: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  if (pendingCount === 0) return null;
+
+  const estCost = (pendingCount * 0.2).toFixed(2);
+
+  async function run() {
+    setBusy(true);
+    try {
+      const res = await api.autoTriggerPacks({ days_ahead: 180 });
+      onTriggered();
+      // Lightweight success feedback
+      console.log(
+        `auto-trigger: queued ${res.triggered} of ${res.candidates_seen} candidates`
+      );
+    } catch (e) {
+      alert(`Auto-trigger failed: ${e}`);
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setConfirming(true)}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+      >
+        <Sparkles size={14} />
+        {busy ? "Running…" : `Auto-trigger (${pendingCount})`}
+      </button>
+      {confirming && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirming(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <h2 className="text-base font-semibold">Auto-trigger pending packs</h2>
+            <p className="mt-2 text-sm text-neutral-600">
+              This will generate review packs for <span className="font-semibold">{pendingCount}</span>{" "}
+              upcoming rent-review event{pendingCount === 1 ? "" : "s"} (next 180 days, no pack yet).
+            </p>
+            <p className="mt-2 text-xs text-neutral-500">
+              Estimated API spend: <span className="font-medium">~£{estCost}</span> · each pack takes ~60–120s.
+              You can keep using the app while they run.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirming(false)}
+                disabled={busy}
+                className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm hover:bg-neutral-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={run}
+                disabled={busy}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {busy ? "Triggering…" : `Generate ${pendingCount} pack${pendingCount === 1 ? "" : "s"}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

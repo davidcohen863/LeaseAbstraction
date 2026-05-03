@@ -58,3 +58,15 @@ services:
     envVars:
       - key: LEASEOS_API_URL
         sync: false                # set to https://leaseos-api.onrender.com once deployed
+
+  - type: cron
+    name: leaseos-pack-auto-trigger
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    schedule: "0 6 * * *"          # 06:00 UTC daily — runs before the 07:00 digest
+    # Default horizon: 180 days. Each new pack costs ~£0.20 of API spend.
+    dockerCommand: "curl -fsS -X POST '$LEASEOS_API_URL/packs/auto-trigger?days_ahead=180'"
+    envVars:
+      - key: LEASEOS_API_URL
+        sync: false

@@ -136,28 +136,87 @@ export interface PackDetail extends PackSummary {
   documents: PackDocumentOut[];
 }
 
-interface FetchOpts {
+export interface FetchOpts {
   token?: string | null;
   signal?: AbortSignal;
+  /** Override default timeout (ms). Set to 0 to disable. Default 15s. */
+  timeoutMs?: number;
+}
+
+/** Default per-request timeout. Long enough for slow extractions / OAuth
+ * round-trips, short enough that a network blip surfaces as a real error
+ * within the demo attention span instead of an eternal spinner. */
+export const DEFAULT_TIMEOUT_MS = 15_000;
+
+/** Thrown when an API call exceeds its timeout. Distinct from AbortError so
+ * UI components can show a "couldn't reach the API" message rather than
+ * silently treating it as a user-cancelled navigation. */
+export class ApiTimeoutError extends Error {
+  constructor(public readonly path: string, public readonly timeoutMs: number) {
+    super(`API timeout after ${timeoutMs}ms on ${path}`);
+    this.name = "ApiTimeoutError";
+  }
+}
+
+/** Returned for non-2xx responses. Carries the status code so the UI can
+ * differentiate 401 (auth) from 404 (not found) from 5xx (server). */
+export class ApiHttpError extends Error {
+  constructor(
+    public readonly path: string,
+    public readonly status: number,
+    public readonly body: string,
+  ) {
+    super(`API ${status} on ${path}: ${body || "(no body)"}`);
+    this.name = "ApiHttpError";
+  }
 }
 
 async function call<T>(
   path: string,
   init: RequestInit & FetchOpts = {}
 ): Promise<T> {
-  const { token, signal, headers, ...rest } = init;
-  const res = await fetch(`${API_URL}${path}`, {
-    ...rest,
-    signal,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-    cache: "no-store",
-  });
+  const { token, signal: callerSignal, headers, timeoutMs, ...rest } = init;
+  const effectiveTimeout = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  // Compose the caller's AbortSignal (e.g. unmount) with our own timeout
+  // controller. AbortSignal.any chains them so EITHER aborts the fetch.
+  let signal = callerSignal;
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  if (effectiveTimeout > 0) {
+    const timeoutController = new AbortController();
+    timeoutHandle = setTimeout(() => timeoutController.abort(), effectiveTimeout);
+    signal = callerSignal
+      ? AbortSignal.any([callerSignal, timeoutController.signal])
+      : timeoutController.signal;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...rest,
+      signal,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+      cache: "no-store",
+    });
+  } catch (err) {
+    // If the caller cancelled (e.g. component unmount), let the AbortError
+    // propagate so React doesn't update state on an unmounted component.
+    // If WE timed out, surface a typed error the UI can show.
+    if (err instanceof DOMException && err.name === "AbortError") {
+      if (callerSignal?.aborted) throw err;
+      throw new ApiTimeoutError(path, effectiveTimeout);
+    }
+    throw err;
+  } finally {
+    if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`API ${res.status} on ${path}: ${text || res.statusText}`);
+    throw new ApiHttpError(path, res.status, text);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

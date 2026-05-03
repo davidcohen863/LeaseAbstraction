@@ -1,20 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { Building2 } from "lucide-react";
 import { api, type PropertySummary } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
+import { ErrorState } from "@/components/ui/error-state";
 
 export default function PropertiesPage() {
-  const [props, setProps] = useState<PropertySummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: props, loading, refetching, error, refetch } = useApi<PropertySummary[]>(
+    (opts) => api.listProperties(opts),
+  );
   const [search, setSearch] = useState("");
   const [groupByClient, setGroupByClient] = useState(false);
-
-  useEffect(() => {
-    api.listProperties().then(setProps).catch((e) => setError(String(e)));
-  }, []);
 
   const filtered = useMemo(() => {
     if (!props) return null;
@@ -70,11 +69,16 @@ export default function PropertiesPage() {
       </div>
 
       {error && (
-        <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+        <div className="mb-6">
+          <ErrorState error={error} onRetry={refetch} retrying={refetching} compact />
+        </div>
       )}
 
-      {props === null ? (
+      {loading ? (
         <Loading />
+      ) : props === null ? (
+        // Errored on first load with no cached data — banner above is the message.
+        null
       ) : props.length === 0 ? (
         <EmptyState />
       ) : grouped ? (

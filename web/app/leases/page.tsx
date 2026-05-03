@@ -13,7 +13,9 @@ import {
   Filter,
 } from "lucide-react";
 import { api, type LeaseEvent, type LeaseSummary, type PropertySummary } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { humanise } from "@/lib/humanise";
+import { ErrorState } from "@/components/ui/error-state";
 import { StatusPill } from "@/components/ui/status-pill";
 
 // ---- types --------------------------------------------------------------
@@ -47,10 +49,7 @@ interface EnrichedLease extends LeaseSummary {
 // ---- page --------------------------------------------------------------
 
 export default function LeasesPage() {
-  const [leases, setLeases] = useState<LeaseSummary[] | null>(null);
-  const [properties, setProperties] = useState<PropertySummary[]>([]);
-  const [events, setEvents] = useState<LeaseEvent[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,29 +65,30 @@ export default function LeasesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Initial load + polling while extractions are in flight
-  const load = () =>
-    Promise.all([
-      api.listLeases().catch(() => []),
-      api.listProperties().catch(() => []),
-      api.listEvents({ days_ahead: 365, days_behind: 30 }).catch(() => []),
-    ]).then(([l, p, e]) => {
-      setLeases(l);
-      setProperties(p);
-      setEvents(e);
-    });
+  const leasesQ = useApi<LeaseSummary[]>((opts) => api.listLeases(opts));
+  const propertiesQ = useApi<PropertySummary[]>((opts) => api.listProperties(opts));
+  const eventsQ = useApi<LeaseEvent[]>((opts) =>
+    api.listEvents({ days_ahead: 365, days_behind: 30 }, opts)
+  );
+  const leases = leasesQ.data;
+  const properties = propertiesQ.data ?? [];
+  const events = eventsQ.data ?? [];
 
+  const refetchAll = () => {
+    leasesQ.refetch();
+    propertiesQ.refetch();
+    eventsQ.refetch();
+  };
+  const anyError = leasesQ.error || propertiesQ.error || eventsQ.error;
+  const anyRetrying = leasesQ.refetching || propertiesQ.refetching || eventsQ.refetching;
+
+  // Poll while any lease is mid-extraction
   useEffect(() => {
-    void load();
-    const id = setInterval(() => {
-      setLeases((prev) => {
-        if (prev?.some((l) => l.status === "uploaded" || l.status === "extracting")) {
-          void load();
-        }
-        return prev;
-      });
-    }, 3000);
+    if (!leases?.some((l) => l.status === "uploaded" || l.status === "extracting")) return;
+    const id = setInterval(() => leasesQ.refetch(), 3000);
     return () => clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leases?.map((l) => l.status).join(",")]);
 
   // Enrich leases with client + critical-event info
   const enriched = useMemo<EnrichedLease[] | null>(() => {
@@ -156,14 +156,14 @@ export default function LeasesPage() {
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     setUploading(true);
-    setError(null);
+    setUploadError(null);
     try {
       for (const file of Array.from(files)) {
         await api.uploadLease(file);
       }
-      await load();
+      leasesQ.refetch();
     } catch (e) {
-      setError(String(e));
+      setUploadError(String(e));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -277,14 +277,23 @@ export default function LeasesPage() {
         </div>
       </header>
 
-      {error && (
+      {uploadError && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          {error}
+          {uploadError}
         </div>
       )}
 
-      {leases === null ? (
+      {anyError && (
+        <div className="mb-6">
+          <ErrorState error={anyError} onRetry={refetchAll} retrying={anyRetrying} compact />
+        </div>
+      )}
+
+      {leasesQ.loading ? (
         <Loading />
+      ) : leases === null ? (
+        // Errored on first load with no cached data — banner above is the message.
+        null
       ) : leases.length === 0 ? (
         <EmptyState onPick={() => fileInputRef.current?.click()} />
       ) : (

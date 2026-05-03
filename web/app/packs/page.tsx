@@ -1,29 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { Package } from "lucide-react";
 import { api, type PackSummary } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { StatusPill } from "@/components/ui/status-pill";
 
 export default function PacksListPage() {
-  const [packs, setPacks] = useState<PackSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: packs, loading, refetching, error, refetch } = useApi<PackSummary[]>(
+    (opts) => api.listPacks(undefined, opts),
+  );
 
+  // Poll while any pack is mid-generation
   useEffect(() => {
-    const load = () =>
-      api.listPacks().then(setPacks).catch((e) => setError(String(e)));
-    void load();
-    const id = setInterval(() => {
-      setPacks((prev) => {
-        if (prev?.some((p) => p.status === "generating")) void load();
-        return prev;
-      });
-    }, 3000);
+    if (!packs?.some((p) => p.status === "generating")) return;
+    const id = setInterval(() => refetch(), 3000);
     return () => clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packs?.map((p) => p.status).join(",")]);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
@@ -35,11 +33,16 @@ export default function PacksListPage() {
       </div>
 
       {error && (
-        <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+        <div className="mb-6">
+          <ErrorState error={error} onRetry={refetch} retrying={refetching} compact />
+        </div>
       )}
 
-      {packs === null ? (
+      {loading ? (
         <div className="text-sm text-neutral-500">Loading…</div>
+      ) : packs === null ? (
+        // Errored on first load — banner above is the message.
+        null
       ) : packs.length === 0 ? (
         <EmptyState
           icon={Package}

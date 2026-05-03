@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after Cloudflare Tunnel + Next 16 allowedDevOrigins hotfix so tunnelled pages actually load data)
+- Last updated: 2026-05-03 (after frontend hardening: 15s fetch timeouts + useApi hook + ErrorState component so silent loading-spinners are now visible "couldn't load — retry?" cards)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -348,10 +348,18 @@ leaseos/
       ui/status-pill.tsx     # Centralised colour-coded status component
       ui/command-palette.tsx # ⌘K global search (cmdk)
       ui/empty-state.tsx     # P2 — shared empty-state card (icon, title, description, actions, hint)
+      ui/error-state.tsx     # P2.1 — shared error card with Retry; recognises
+                             #   ApiTimeoutError / ApiHttpError to show useful
+                             #   messages (e.g. "took longer than 15s")
       calendar/month-grid.tsx   # P1 — 7-col month grid (date-fns, no library)
       calendar/event-drawer.tsx # P1 — slide-in drawer for event detail + actions
     lib/
-      api.ts                 # Typed fetch client for the FastAPI backend
+      api.ts                 # Typed fetch client + 15s default AbortController
+                             #   timeout + ApiTimeoutError / ApiHttpError classes
+      use-api.ts             # useApi<T>(loader, deps) — replaces the
+                             #   useState/useEffect-with-.catch boilerplate
+                             #   with loading/refetching/error/refetch state.
+                             #   Auto-cancels on unmount or deps change.
       clerk.ts               # Optional-Clerk gate
       humanise.ts            # Enum → English label mappings
       csv.ts                 # P1 — minimal CSV parser (handles quotes, CRLF)
@@ -645,6 +653,21 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.8 Frontend hardening — fetch timeouts + visible error states (landed 2026-05-03)
+
+**Why:** the recent "everything is loading" debug session took 20 minutes because the symptom (eternal spinner) had no error trail. With Next.js dev's `allowedDevOrigins` blocking client modules, `useEffect` never fired, no `.catch` handler triggered, and pages just *sat there*. The next time something breaks at the network layer (mid-demo Wi-Fi blip, API restart, bad deploy) we want it to fail loudly inside ~15 seconds, not invisibly.
+
+**What landed:**
+
+- `lib/api.ts` `call()` now wraps every fetch in an `AbortController` with a 15-second default timeout, composed with the caller's signal via `AbortSignal.any` so unmount cancels still work. Two new typed errors:
+  - `ApiTimeoutError(path, timeoutMs)` — thrown when our timeout fires (distinct from caller-cancellation `AbortError`)
+  - `ApiHttpError(path, status, body)` — thrown for 4xx/5xx, carries the status code so the UI can differentiate auth/not-found/server errors
+- `lib/use-api.ts` — new `useApi<T>(loader, deps)` hook returns `{ data, loading, refetching, error, refetch }`. Replaces the `useState(null) + useEffect → setState` pattern that was repeated on every page and silently turned errors into eternal spinners. Cancels in-flight requests on unmount or dep change. Keeps prior `data` populated during refetches so the panel doesn't flash to blank.
+- `components/ui/error-state.tsx` — new `<ErrorState>` card pairing with `<EmptyState>`. Recognises `ApiTimeoutError` ("took longer than 15s — check connection") and `ApiHttpError` (auth / 404 / 5xx-specific copy), with a Retry button that calls back into `useApi.refetch`.
+- Rolled out to `/today` (3 queries combined into one banner + retry-all), `/leases` (3 queries), `/properties` (1 query), `/packs` (1 query). The pages now show a real "Couldn't load — retry?" card on failure instead of a spinner.
+
+**Future test coverage:** no frontend test runner installed yet. Adding vitest just for these would be heavier than the change itself. Tracked as a follow-up; in the meantime `tsc --noEmit` covers the type contracts and the live tunnel exercises the runtime behaviour.
 
 ### 9.4.7 Next 16 `allowedDevOrigins` for cross-origin demo (landed 2026-05-03, hotfix)
 

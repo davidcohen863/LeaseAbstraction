@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { differenceInDays, format, parseISO } from "date-fns";
 import {
@@ -13,7 +13,9 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { api, type LeaseEvent, type LeaseSummary, type PackSummary } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { humanise } from "@/lib/humanise";
+import { ErrorState } from "@/components/ui/error-state";
 import { StatusPill } from "@/components/ui/status-pill";
 
 const CRITICAL_TYPES = new Set([
@@ -24,23 +26,25 @@ const CRITICAL_TYPES = new Set([
 ]);
 
 export default function TodayPage() {
-  const [leases, setLeases] = useState<LeaseSummary[] | null>(null);
-  const [events, setEvents] = useState<LeaseEvent[] | null>(null);
-  const [packs, setPacks] = useState<PackSummary[] | null>(null);
+  const leasesQ = useApi<LeaseSummary[]>((opts) => api.listLeases(opts));
+  const eventsQ = useApi<LeaseEvent[]>((opts) =>
+    api.listEvents({ days_ahead: 365, days_behind: 7 }, opts)
+  );
+  const packsQ = useApi<PackSummary[]>((opts) => api.listPacks(undefined, opts));
 
-  useEffect(() => {
-    Promise.all([
-      api.listLeases().catch(() => []),
-      api.listEvents({ days_ahead: 365, days_behind: 7 }).catch(() => []),
-      api.listPacks().catch(() => []),
-    ]).then(([l, e, p]) => {
-      setLeases(l);
-      setEvents(e);
-      setPacks(p);
-    });
-  }, []);
-
+  const leases = leasesQ.data;
+  const events = eventsQ.data;
+  const packs = packsQ.data;
   const stats = useMemo(() => buildStats(leases, events, packs), [leases, events, packs]);
+
+  // One Retry button covers all three queries — they all hit the same backend.
+  const anyError = leasesQ.error || eventsQ.error || packsQ.error;
+  const retryAll = () => {
+    leasesQ.refetch();
+    eventsQ.refetch();
+    packsQ.refetch();
+  };
+  const anyRetrying = leasesQ.refetching || eventsQ.refetching || packsQ.refetching;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -51,6 +55,14 @@ export default function TodayPage() {
           Here&apos;s what needs your attention.
         </p>
       </header>
+
+      {/* Top-of-page error banner — surfaced if ANY of the three queries
+         failed, so a network blip stops being invisible. */}
+      {anyError && (
+        <div className="mb-6">
+          <ErrorState error={anyError} onRetry={retryAll} retrying={anyRetrying} compact />
+        </div>
+      )}
 
       {/* KPI strip */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-5 mb-6">
@@ -100,8 +112,10 @@ export default function TodayPage() {
               View full calendar →
             </Link>
           </div>
-          {events === null ? (
+          {eventsQ.loading ? (
             <Loading />
+          ) : eventsQ.error ? (
+            <EmptySlot text="—" />
           ) : stats.actionItems.length === 0 ? (
             <EmptySlot text="Nothing critical in the next 30 days. ✅" />
           ) : (
@@ -118,8 +132,10 @@ export default function TodayPage() {
           <div className="border-b border-neutral-100 px-4 py-3">
             <h2 className="text-sm font-semibold text-neutral-900">Recent activity</h2>
           </div>
-          {(leases === null || packs === null) ? (
+          {(leasesQ.loading || packsQ.loading) ? (
             <Loading />
+          ) : (leasesQ.error || packsQ.error) ? (
+            <EmptySlot text="—" />
           ) : stats.recent.length === 0 ? (
             <EmptySlot text="No recent activity." />
           ) : (

@@ -7,12 +7,14 @@ build/
 dist/
 
 # Secrets & local data
+# Note: paths are anchored to project root with leading `/` so they don't
+# accidentally match `web/app/leases/` etc.
 .env
 .env.local
 .DS_Store
-data/
-leases/
-output/
+/data/
+/leases/
+/output/
 
 # Node / Next.js (web/)
 web/node_modules/

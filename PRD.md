@@ -281,7 +281,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | P1 Leases-list redesign — left filter rail (status multi + critical-only), sortable columns, group-by (status / property / client), bulk-select + CSV export, Property + Client + Critical columns, search across label / property / client |
+| (this commit) | **Fix .gitignore bug** — `leases/` was matching `web/app/leases/`, so the lease UI files (page, [id], FieldsPanel, PdfViewer) had never been pushed. Anchored `/leases/`, `/data/`, `/output/`. Lease UI files now properly committed |
+| `e6f71ce` | P1 Leases-list redesign — left filter rail (status multi + critical-only), sortable columns, group-by (status / property / client), bulk-select + CSV export, Property + Client + Critical columns, search across label / property / client |
 | `11382f3` | P1 Reviews kanban — `/reviews` 4-column board (Pack pending → Draft → Sent → Settled), per-card actions (Generate / Mark sent), settled uplift %, polling for in-flight packs |
 | `dd1cd2d` | P1 Calendar — month grid view (date-fns, no library), event drawer with Generate-pack action, Month/List toggle, type-filter chips, Today button + month nav |
 | `9ba254e` | P1 Properties as first-class entity — model migration, auto-link on extraction, `/properties` list + detail, sidebar + cmd-K integration, lease detail breadcrumbs, leases list Property column |

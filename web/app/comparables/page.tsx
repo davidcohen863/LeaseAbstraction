@@ -79,9 +79,9 @@ export default function ComparablesPage() {
       if (q && !c.address.toLowerCase().includes(q) && !(c.notes ?? "").toLowerCase().includes(q)) {
         return false;
       }
-      if (c.use_class && !enabledUseClasses.has(c.use_class)) {
-        // Allow rows with no use_class through if any class is enabled (don't be too strict)
-      }
+      // Use-class filter: only excludes rows whose class is *known and not in the
+      // enabled set*. Comparables uploaded without a use_class always pass through
+      // — there's no UI affordance for the user to filter to "unknown only".
       if (c.use_class && !enabledUseClasses.has(c.use_class)) return false;
       if (!enabledSources.has(c.source)) return false;
       return true;

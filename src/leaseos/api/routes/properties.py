@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..auth import AuthenticatedUser, current_user
 from ..db import get_db
 from ..models import Lease, LeaseEvent, LeaseStatus, Property
+from ...utils import utc_now
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
@@ -79,7 +80,7 @@ def _summarise(db: Session, prop: Property) -> PropertySummary:
             db.execute(
                 select(LeaseEvent)
                 .where(LeaseEvent.lease_id.in_(lease_ids))
-                .where(LeaseEvent.event_date >= datetime.utcnow())
+                .where(LeaseEvent.event_date >= utc_now())
                 .order_by(LeaseEvent.event_date.asc())
                 .limit(1)
             )
@@ -146,7 +147,7 @@ def get_property(
         db.execute(
             select(LeaseEvent)
             .where(LeaseEvent.lease_id.in_(lease_ids) if lease_ids else False)
-            .where(LeaseEvent.event_date >= datetime.utcnow() - timedelta(days=14))
+            .where(LeaseEvent.event_date >= utc_now() - timedelta(days=14))
             .order_by(LeaseEvent.event_date.asc())
             .limit(20)
         )

@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 
 from ..api.config import get_settings
 from ..api.crypto import decrypt_secret
-from ..api.models import Lease, LeaseEvent, SlackIntegration
+from ..api.models import EventStatus, Lease, LeaseEvent, SlackIntegration
+from ..utils import utc_now
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def send_daily_digest(db: Session, *, days_ahead: int = 90) -> int:
             return 0
         integrations = [SlackIntegration(webhook_url=url, channel_label="default")]
 
-    now = datetime.utcnow()
+    now = utc_now()
     cutoff = now + timedelta(days=days_ahead)
     rows = (
         db.execute(
@@ -82,7 +83,7 @@ def send_daily_digest(db: Session, *, days_ahead: int = 90) -> int:
             .join(Lease, Lease.id == LeaseEvent.lease_id)
             .where(LeaseEvent.event_date >= now)
             .where(LeaseEvent.event_date <= cutoff)
-            .where(LeaseEvent.status == "upcoming")
+            .where(LeaseEvent.status == EventStatus.UPCOMING.value)
             .order_by(LeaseEvent.event_date.asc())
         )
         .all()

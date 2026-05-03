@@ -11,8 +11,9 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import get_settings
 from .db import init_db
@@ -69,10 +70,31 @@ def _assert_safe_prod_config(settings) -> None:
         )
 
 
+class NoStoreCacheMiddleware(BaseHTTPMiddleware):
+    """Tag every API response with `Cache-Control: no-store`.
+
+    Why: every endpoint other than /health returns per-tenant data behind
+    Clerk auth. Browsers and intermediate caches must not retain the
+    response, otherwise a logged-out user (or a different signed-in user
+    on a shared device) could pull the previous user's lease data out of
+    the disk cache. The static frontend on Vercel is unaffected — this
+    only fires on API responses.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Don't override responses that already set their own caching policy
+        # (e.g. file downloads via FileResponse may want different rules later).
+        if "cache-control" not in (k.lower() for k in response.headers):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     _assert_safe_prod_config(settings)
     app = FastAPI(title="LeaseOS API", version="0.2.0", lifespan=lifespan)
+    app.add_middleware(NoStoreCacheMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..extract import extract_two_pass, summarise_ancillary_doc
 from ..pdf import load_pdf
+from ..utils import utc_now
 from .db import SessionLocal
 from .events import derive_events
 from .models import Document, Lease, LeaseEvent, LeaseStatus, Property, normalise_address
@@ -138,7 +139,7 @@ def _ensure_property(db: Session, address: str) -> str:
         return existing.id
     # Explicitly set timestamps — the SQLite column was added via ALTER
     # without a DEFAULT, so the SQLAlchemy server_default doesn't take.
-    now = datetime.utcnow()
+    now = utc_now()
     prop = Property(
         address=address,
         address_normalised=norm,

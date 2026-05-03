@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..auth import AuthenticatedUser, current_user
 from ..db import get_db
 from ..models import Lease, LeaseEvent
+from ...utils import utc_now
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -37,7 +38,7 @@ def list_events(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[EventOut]:
-    now = datetime.utcnow()
+    now = utc_now()
     start = now - timedelta(days=days_behind)
     end = now + timedelta(days=days_ahead)
     stmt = (

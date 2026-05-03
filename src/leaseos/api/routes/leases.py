@@ -18,6 +18,7 @@ from ..models import Document, FieldEdit, Lease, LeaseStatus
 from ..security import safe_filename as _safe_filename
 from ..security import serve_inside_sandbox as _serve_inside_sandbox
 from ..worker import run_extraction
+from ...utils import utc_now
 
 router = APIRouter(prefix="/leases", tags=["leases"])
 
@@ -345,7 +346,7 @@ def approve_lease(
     if lease.status not in (LeaseStatus.READY_FOR_REVIEW.value, LeaseStatus.APPROVED.value):
         raise HTTPException(400, f"Lease is in status {lease.status!r}; cannot approve")
     lease.status = LeaseStatus.APPROVED.value
-    lease.approved_at = datetime.utcnow()
+    lease.approved_at = utc_now()
     lease.approved_by = user.id
     db.commit()
     db.refresh(lease)

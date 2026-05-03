@@ -16,6 +16,7 @@ from ..models import (
     Comparable,
     ComparableSource,
     DealType,
+    EventType,
     Lease,
     LeaseEvent,
     PackDocument,
@@ -24,6 +25,7 @@ from ..models import (
 )
 from ..pack_worker import run_pack_generation
 from ..security import serve_inside_sandbox
+from ...utils import utc_now
 
 router = APIRouter(tags=["packs"])
 
@@ -138,12 +140,12 @@ def auto_trigger_packs(
 
     Set `dry_run=true` to count candidates without actually generating.
     """
-    now = datetime.utcnow()
+    now = utc_now()
     horizon = now + timedelta(days=days_ahead)
 
     candidate_events = db.execute(
         select(LeaseEvent)
-        .where(LeaseEvent.event_type == "rent_review_trigger")
+        .where(LeaseEvent.event_type == EventType.RENT_REVIEW_TRIGGER.value)
         .where(LeaseEvent.event_date >= now - timedelta(days=14))
         .where(LeaseEvent.event_date <= horizon)
     ).scalars().all()
@@ -296,7 +298,7 @@ def mark_sent(
     if pack is None:
         raise HTTPException(404, "Pack not found")
     pack.status = PackStatus.SENT.value
-    pack.sent_at = datetime.utcnow()
+    pack.sent_at = utc_now()
     db.commit()
     lease = db.get(Lease, pack.lease_id)
     return _summary(pack, lease.label if lease else None)
@@ -314,7 +316,7 @@ def settle_pack(
         raise HTTPException(404, "Pack not found")
     pack.status = PackStatus.SETTLED.value
     pack.settled_rent_gbp = body.settled_rent_gbp
-    pack.settled_at = datetime.utcnow()
+    pack.settled_at = utc_now()
 
     # Feed back into comparables: add an internal Comparable from this lease's settled rent
     lease = db.get(Lease, pack.lease_id)
@@ -338,7 +340,7 @@ def settle_pack(
             rent_pa_gbp=body.settled_rent_gbp,
             area_sqft=area_sqft,
             use_class=use_class,
-            deal_date=datetime.utcnow(),
+            deal_date=utc_now(),
             deal_type=DealType.RENT_REVIEW.value,
             source=ComparableSource.INTERNAL.value,
             notes=f"Settled rent review on {address} (LeaseOS pack {pack.id})",

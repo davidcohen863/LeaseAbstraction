@@ -21,6 +21,7 @@ from ..config import get_settings
 from ..crypto import decrypt_secret, encrypt_secret
 from ..db import get_db
 from ..models import LeaseEvent, OAuthState, OAuthToken, SlackIntegration
+from ...utils import utc_now
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -148,7 +149,7 @@ def _new_state(db: Session, user_id: str, provider: str) -> str:
     db.add(OAuthState(state=state, user_id=user_id, provider=provider))
     # Best-effort GC of expired rows. Tiny table, runs maybe a dozen times a day.
     db.query(OAuthState).filter(
-        OAuthState.created_at < datetime.utcnow() - _STATE_TTL
+        OAuthState.created_at < utc_now() - _STATE_TTL
     ).delete(synchronize_session=False)
     db.commit()
     return state
@@ -158,7 +159,7 @@ def _consume_state(db: Session, state: str, provider: str) -> str:
     row = db.get(OAuthState, state)
     if row is None or row.provider != provider:
         raise HTTPException(400, "Invalid or expired OAuth state")
-    if datetime.utcnow() - row.created_at > _STATE_TTL:
+    if utc_now() - row.created_at > _STATE_TTL:
         db.delete(row)
         db.commit()
         raise HTTPException(400, "Invalid or expired OAuth state")
@@ -189,7 +190,7 @@ def google_callback(
     user_id = _consume_state(db, state, "google")
     payload = google_integ.exchange_code(code)
     info = google_integ.fetch_userinfo(payload["access_token"])
-    expires_at = datetime.utcnow() + timedelta(seconds=int(payload.get("expires_in", 3600)))
+    expires_at = utc_now() + timedelta(seconds=int(payload.get("expires_in", 3600)))
     existing = db.execute(
         select(OAuthToken).where(OAuthToken.user_id == user_id, OAuthToken.provider == "google")
     ).scalar_one_or_none()
@@ -236,7 +237,7 @@ def microsoft_callback(
     user_id = _consume_state(db, state, "microsoft")
     payload = ms_integ.exchange_code(code)
     info = ms_integ.fetch_userinfo(payload["access_token"])
-    expires_at = datetime.utcnow() + timedelta(seconds=int(payload.get("expires_in", 3600)))
+    expires_at = utc_now() + timedelta(seconds=int(payload.get("expires_in", 3600)))
     existing = db.execute(
         select(OAuthToken).where(OAuthToken.user_id == user_id, OAuthToken.provider == "microsoft")
     ).scalar_one_or_none()

@@ -68,6 +68,11 @@ def _expand_review_dates(record: LeaseRecord) -> list[datetime]:
         return sorted(out)
 
     cur = _add_months(seed, cycle_months)
+    # Belt-and-braces cap. Real commercial leases top out around 25 years × 12
+    # = 300 months; with a 12-month cycle that's 25 cycles, well inside 100.
+    # The cap exists only to prevent a runaway loop if someone hand-crafts a
+    # nonsense LeaseRecord with `cycle_months=0` (which `_add_months` would
+    # then return unchanged, causing `cur < expiry` to stay true forever).
     safety = 0
     while cur < expiry and safety < 100:
         out.add(cur)

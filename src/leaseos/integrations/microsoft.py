@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..api.config import get_settings
 from ..api.models import LeaseEvent, OAuthToken
+from ..utils import utc_now
 
 log = logging.getLogger(__name__)
 
@@ -87,12 +88,12 @@ def refresh_access_token(token: OAuthToken) -> str:
     if "refresh_token" in payload:
         token.refresh_token = payload["refresh_token"]
     expires_in = payload.get("expires_in", 3600)
-    token.expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+    token.expires_at = utc_now() + timedelta(seconds=expires_in)
     return token.access_token
 
 
 def _ensure_fresh(db: Session, token: OAuthToken) -> str:
-    if token.expires_at and token.expires_at > datetime.utcnow() + timedelta(seconds=60):
+    if token.expires_at and token.expires_at > utc_now() + timedelta(seconds=60):
         return token.access_token
     if not token.refresh_token:
         raise RuntimeError("No refresh token; user must re-authorize")

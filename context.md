@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after M-tier security hardening: prod CORS assertion, N+1 eager-loads, pack-doc sandbox, encrypted Slack webhooks, DB-backed OAuth state)
+- Last updated: 2026-05-03 (after L-tier cleanup: utc_now helper replaces datetime.utcnow, Cache-Control no-store middleware, enum-consistency fixes, render_docx tests)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -275,6 +275,7 @@ leaseos/
   src/leaseos/
     schema.py                # Pydantic LeaseRecord — 23 fields + per-field Citation
     pdf.py                   # PyMuPDF loader (text + rasterised page images)
+    utils.py                 # utc_now() — naive-UTC helper (replaces datetime.utcnow())
     prompts.py               # Extraction + pack-generator system prompts
     extract.py               # Anthropic call: forced tool-use + prompt caching
     pack_generator.py        # Rent-review pack: Claude tool-use + python-docx render
@@ -622,6 +623,15 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.2 L-tier cleanup (landed 2026-05-03)
+
+- ✅ **L1** `datetime.utcnow()` → `utc_now()` helper from new `src/leaseos/utils.py`. The deprecated function would have started raising in Python 3.14; warnings cleared. Helper returns naive-UTC so SQLAlchemy DateTime columns don't need a schema change.
+- ✅ **L2** `Cache-Control: no-store` on every API response via new `NoStoreCacheMiddleware`. Stops a logged-out user (or a different signed-in user on a shared device) pulling another tenant's lease data out of the disk cache.
+- ✅ **L5** Enum consistency — `LeaseEvent.event_type == "rent_review_trigger"` and `LeaseEvent.status == "upcoming"` raw-string comparisons swapped for `EventType.RENT_REVIEW_TRIGGER.value` / `EventStatus.UPCOMING.value`.
+- ✅ **L6** Dead-code branch in `web/app/comparables/page.tsx` use-class filter removed; behaviour now matches the (also-clarified) comment.
+- ✅ **L8** Tests for the markdown→docx renderer in `pack_generator.py` — 12 tests covering headings, bullets, bold inline, ragged tables, empty input, parent-dir creation. The actual Anthropic call still isn't unit-tested (would need mocking) but the deterministic post-processing now is.
+- ✅ **L9** `_expand_review_dates`'s 100-cycle safety cap is now documented — exists to prevent a runaway loop on a hand-crafted `cycle_months=0` `LeaseRecord`, not because real leases ever approach the limit.
 
 ### 9.4.1 Security hardening (M-tier — landed 2026-05-03)
 

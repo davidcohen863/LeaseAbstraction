@@ -3,15 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
-import { api, type PackSummary, type PackStatus } from "@/lib/api";
-
-const STATUS_STYLE: Record<PackStatus, string> = {
-  generating: "bg-amber-500 text-white",
-  draft: "bg-blue-600 text-white",
-  sent: "bg-violet-600 text-white",
-  settled: "bg-emerald-600 text-white",
-  failed: "bg-red-600 text-white",
-};
+import { api, type PackSummary } from "@/lib/api";
+import { StatusPill } from "@/components/ui/status-pill";
 
 export default function PacksListPage() {
   const [packs, setPacks] = useState<PackSummary[] | null>(null);
@@ -75,9 +68,7 @@ export default function PacksListPage() {
                     </Link>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[p.status]}`}>
-                      {p.status}
-                    </span>
+                    <StatusPill group="pack_status" value={p.status} />
                   </td>
                   <td className="px-4 py-3 text-right">{p.current_rent_gbp ? `£${p.current_rent_gbp.toLocaleString()}` : "—"}</td>
                   <td className="px-4 py-3 text-right">{p.recommended_opening_gbp ? `£${p.recommended_opening_gbp.toLocaleString()}` : "—"}</td>

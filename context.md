@@ -2,13 +2,13 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after side-letter / variation attachment + AI summary)
+- Last updated: 2026-05-03 (after the code review + first pytest suite)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
 - Status: **v0.8 working locally — UX P1 milestone complete.** Extraction + reviewer (3-col + collapsible sections + PDF controls) + calendar (month grid + list) + reviews kanban + pack generator (Word-style preview + inline edit) + sidebar/Today shell + Properties first-class + leases list with filters/sort/group/bulk + comparables with stats/CSV import. Pre-deploy.
 
-> **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship.
+> **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`CODE_REVIEW.md`](./CODE_REVIEW.md)** for the security + correctness audit; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship.
 
 ---
 
@@ -606,7 +606,7 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 
 - OAuth state currently in-memory (a `dict` in `routes/integrations.py`) — fine for one server, won't survive restart or multi-instance. Move to Redis/DB before scaling.
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
-- **No tests yet.** Add pytest + a Playwright smoke test before shipping to a real customer.
+- ✅ **Backend pytest suite** — 66 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation regression. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - **Alembic migrations** — currently `init_db()` autocreates; needed before first prod schema change.
 
 ### 9.5 The bigger product roadmap

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +20,43 @@ from ..models import Document, FieldEdit, Lease, LeaseStatus
 from ..worker import run_extraction
 
 router = APIRouter(prefix="/leases", tags=["leases"])
+
+
+# ---- security helpers ---------------------------------------------------
+
+
+def _safe_filename(name: str | None) -> str:
+    """Strip path components and weird chars from an uploaded filename so it
+    can't escape the storage sandbox via `..`, `/`, or null bytes.
+
+    Rejects empty / null-byte input. Caller still adds a UUID prefix so the
+    sanitised name doesn't have to be unique.
+    """
+    if not name or "\x00" in name:
+        raise HTTPException(400, "Invalid filename")
+    base = Path(name).name  # strips any directory components
+    # Allow only safe ASCII chars in the final filename; collapse the rest to '_'
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._")
+    if not cleaned:
+        raise HTTPException(400, "Invalid filename")
+    return cleaned[:200]  # cap length
+
+
+def _serve_inside_sandbox(path: Path, *, media_type: str, filename: str) -> FileResponse:
+    """Refuse to serve a file whose resolved path is outside `storage_dir`.
+    Belt-and-braces: even though we sanitise filenames on the way in, a
+    historical or malicious DB row could still point outside.
+    """
+    settings = get_settings()
+    sandbox = settings.storage_dir.resolve()
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(sandbox)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(403, "Document path outside storage sandbox") from exc
+    if not resolved.exists():
+        raise HTTPException(404, "Document file missing on disk")
+    return FileResponse(resolved, media_type=media_type, filename=filename)
 
 
 # ---- response shapes -----------------------------------------------------
@@ -76,21 +115,22 @@ async def upload_lease(
 
     raw = await file.read()
     sha = hashlib.sha256(raw).hexdigest()
+    safe_name = _safe_filename(file.filename)
 
     lease = Lease(
-        label=label or file.filename,
+        label=label or safe_name,
         status=LeaseStatus.UPLOADED.value,
         assigned_user_id=user.id,
     )
     db.add(lease)
     db.flush()
 
-    storage_path = settings.storage_dir / f"{lease.id}__{file.filename}"
+    storage_path = settings.storage_dir / f"{lease.id}__{safe_name}"
     storage_path.write_bytes(raw)
 
     document = Document(
         lease_id=lease.id,
-        filename=file.filename,
+        filename=safe_name,
         storage_path=str(storage_path),
         sha256=sha,
         size_bytes=len(raw),
@@ -158,16 +198,14 @@ def get_document(
     db: Session = Depends(get_db),
 ):
     """Stream the principal lease PDF back (the first 'lease'-role doc)."""
-    from fastapi.responses import FileResponse
-
     lease = db.get(Lease, lease_id)
     if lease is None or not lease.documents:
         raise HTTPException(404, "Lease or document not found")
     # Prefer a role='lease' doc, fall back to the first
     doc = next((d for d in lease.documents if d.role == "lease"), lease.documents[0])
-    if not Path(doc.storage_path).exists():
-        raise HTTPException(404, "Document file missing on disk")
-    return FileResponse(doc.storage_path, media_type="application/pdf", filename=doc.filename)
+    return _serve_inside_sandbox(
+        Path(doc.storage_path), media_type="application/pdf", filename=doc.filename
+    )
 
 
 @router.get("/{lease_id}/documents/{document_id}")
@@ -178,17 +216,15 @@ def get_lease_document_by_id(
     db: Session = Depends(get_db),
 ):
     """Stream a specific document attached to the lease (for side-letter download)."""
-    from fastapi.responses import FileResponse
-
     lease = db.get(Lease, lease_id)
     if lease is None:
         raise HTTPException(404, "Lease not found")
     doc = next((d for d in lease.documents if d.id == document_id), None)
     if doc is None:
         raise HTTPException(404, "Document not found")
-    if not Path(doc.storage_path).exists():
-        raise HTTPException(404, "Document file missing on disk")
-    return FileResponse(doc.storage_path, media_type="application/pdf", filename=doc.filename)
+    return _serve_inside_sandbox(
+        Path(doc.storage_path), media_type="application/pdf", filename=doc.filename
+    )
 
 
 @router.post("/{lease_id}/documents", response_model=DocumentOut, status_code=201)
@@ -219,17 +255,18 @@ async def attach_document(
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
     raw = await file.read()
     sha = hashlib.sha256(raw).hexdigest()
+    safe_name = _safe_filename(file.filename)
 
-    # Use a unique filename to avoid collisions on the disk
+    # Use a UUID prefix to avoid collisions on the disk
     import uuid as _uuid
-    storage_path = settings.storage_dir / f"{_uuid.uuid4()}__{file.filename}"
+    storage_path = settings.storage_dir / f"{_uuid.uuid4()}__{safe_name}"
     storage_path.write_bytes(raw)
 
     from ..worker import run_ancillary_summary
 
     doc = Document(
         lease_id=lease.id,
-        filename=file.filename,
+        filename=safe_name,
         storage_path=str(storage_path),
         role=role,
         sha256=sha,

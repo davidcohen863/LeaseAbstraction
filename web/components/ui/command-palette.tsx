@@ -12,6 +12,7 @@ import {
   Plug,
   Upload,
   Building2,
+  KanbanSquare,
 } from "lucide-react";
 import { api, type LeaseSummary, type Comparable, type PackSummary, type PropertySummary } from "@/lib/api";
 
@@ -97,6 +98,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
             <NavItem icon={Building2} label="Properties" onSelect={() => go("/properties")} />
             <NavItem icon={FileText} label="Leases" onSelect={() => go("/leases")} />
             <NavItem icon={CalendarDays} label="Calendar" onSelect={() => go("/calendar")} />
+            <NavItem icon={KanbanSquare} label="Reviews board" onSelect={() => go("/reviews")} />
             <NavItem icon={BarChart3} label="Comparables" onSelect={() => go("/comparables")} />
             <NavItem icon={Package} label="Review packs" onSelect={() => go("/packs")} />
             <NavItem icon={Plug} label="Integrations" onSelect={() => go("/integrations")} />

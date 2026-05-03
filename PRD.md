@@ -6,7 +6,7 @@
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Pilot customer: **Claridges Commercial**
 - Vision: vertical SaaS for UK commercial property agencies — start with lease abstraction, expand to dilapidations / inspections / acquisitions sourcing
-- Current state: **Local pilot fully working. Pre-deploy. P0 shell + P1 Properties + P1 Calendar grid shipped.**
+- Current state: **Local pilot fully working. Pre-deploy. P0 shell + P1 Properties + P1 Calendar grid + P1 Reviews kanban shipped.**
 
 > **Rule for AI agents in this repo:** every code commit must include updates to `context.md` and `PRD.md` reflecting what changed. See [`CLAUDE.md`](./CLAUDE.md) for the full convention.
 
@@ -167,7 +167,7 @@ Commit: `8fbf753`.
 | PDF viewer controls (zoom, fit-to-width, page-jump, search-in-PDF) | 📋 | react-pdf supports it |
 | Calendar **month grid** view (vs current vertical list) | ✅ | Built atop date-fns; Month/List view toggle; UK-week (Mon start); Today button |
 | Calendar filters + side-drawer-on-click | ✅ | Type-filter chips + side drawer with Generate-pack action |
-| `/reviews` **kanban board** (Pack pending → Draft → Sent → Settled) | 📋 | Drag-to-advance pack status |
+| `/reviews` **kanban board** (Pack pending → Draft → Sent → Settled) | ✅ | Action-button advance for v1 (drag-to-advance deferred); per-card uplift % on settled |
 | Pack detail polish — Word-style typography preview, inline edit numbers, comparables drawer | 📋 | Currently `prose` — replace with serif paper-card |
 | Comparables map view (Leaflet/Mapbox) + similarity scoring + CSV import | 📋 | Maps + stats row |
 | Use-class select (not free text) | 📋 | Use proper UK Use Classes enum |
@@ -252,11 +252,11 @@ Active milestone: **UX P1 — Workflow surfaces** is in progress. Properties shi
 
 Current todo state at top of stack:
 
-1. ✅ **Properties** as a first-class entity (just shipped)
-2. 📋 Leases list redesign with filter rail + group-by (P1)
-3. 📋 Calendar month-grid view (P1)
-4. 📋 Lease detail collapsible sections + sticky right-rail (P1)
-5. 📋 `/reviews` kanban board (P1)
+1. ✅ **Properties** as a first-class entity
+2. ✅ **Calendar month grid** + drawer + filters
+3. ✅ **`/reviews` kanban board**
+4. 📋 Leases list redesign with filter rail + group-by (P1)
+5. 📋 Lease detail collapsible sections + sticky right-rail (P1)
 6. 📋 Comparables map + similarity scoring (P1)
 7. 📋 Pack detail Word-style preview (P1)
 
@@ -281,7 +281,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | P1 Calendar — month grid view (date-fns, no library), event drawer with Generate-pack action, Month/List toggle, type-filter chips, Today button + month nav |
+| (this commit) | P1 Reviews kanban — `/reviews` 4-column board (Pack pending → Draft → Sent → Settled), per-card actions (Generate / Mark sent), settled uplift %, polling for in-flight packs |
+| `dd1cd2d` | P1 Calendar — month grid view (date-fns, no library), event drawer with Generate-pack action, Month/List toggle, type-filter chips, Today button + month nav |
 | `9ba254e` | P1 Properties as first-class entity — model migration, auto-link on extraction, `/properties` list + detail, sidebar + cmd-K integration, lease detail breadcrumbs, leases list Property column |
 | `34c653c` | Add `CLAUDE.md` with docs-update-before-commit rule; bring `context.md` up to date with everything since v0 |
 | `847a504` | Add `PRD.md` — master status index |

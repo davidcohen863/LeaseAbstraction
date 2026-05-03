@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Briefcase,
   Building2,
+  KanbanSquare,
 } from "lucide-react";
 
 interface NavItem {
@@ -29,6 +30,7 @@ const PRIMARY_NAV: NavItem[] = [
   { href: "/properties",   label: "Properties",   icon: Building2, matchPrefix: "/properties" },
   { href: "/leases",       label: "Leases",       icon: FileText, matchPrefix: "/leases" },
   { href: "/calendar",     label: "Calendar",     icon: CalendarDays },
+  { href: "/reviews",      label: "Reviews",      icon: KanbanSquare },
   { href: "/comparables",  label: "Comparables",  icon: BarChart3 },
   { href: "/packs",        label: "Review packs", icon: Package, matchPrefix: "/packs" },
 ];

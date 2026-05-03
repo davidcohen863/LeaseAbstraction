@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after two-pass extraction quality lift)
+- Last updated: 2026-05-03 (after side-letter / variation attachment + AI summary)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -348,6 +348,7 @@ leaseos/
     seed_n8_comparables.py     # Seed 5 fictional N8 retail comparables
     backfill_properties.py     # P1 — assign existing leases to Property rows + run column migrations
     trigger_pending_packs.py   # Cron-friendly POST to /packs/auto-trigger
+    migrate_documents.py       # Add side-letter summary columns to documents table
   data/                      # Local SQLite DB + uploaded documents + generated packs (gitignored)
   Dockerfile                 # Production image for the API
   render.yaml                # Render Blueprint (API + Postgres + nightly cron)
@@ -377,6 +378,14 @@ leaseos/
 - Webhook URL is validated client-side (must start with `https://hooks.slack.com/`)
 - Status badges (Connected / Not connected) on every integration card
 - Google + Outlook cards show the connected account email when present
+
+**Side-letter / variation overlay** (just shipped)
+- **Attach ancillary documents** to a lease — side-letter, deed of variation, licence to alter / assign, rent deposit deed, schedule of condition, other
+- **Document model extended** with `summary_markdown`, `summary_status`, `summary_seconds`, `summary_error`
+- **`POST /leases/{id}/documents`** endpoint accepts a PDF + role; `DELETE` for ancillary docs (the principal lease PDF is protected)
+- **`run_ancillary_summary()` worker** — background AI summary using a new `SIDE_LETTER_SUMMARY_PROMPT` that produces a structured markdown summary (Type / Date / Parties / In force / Personal / What it changes / What stays / Risk flags) with clause citations
+- **Right rail "Side-letters & variations" panel** — list of attached docs with role label, summary status, expandable inline AI summary, download + delete; a role select + "Attach" upload button at the bottom; polls every 3s while any doc is summarising
+- **Cost**: ~£0.02–0.05 per ancillary doc (they're typically 1-3 pages)
 
 **Pack auto-trigger + Slack notification** (shipped)
 - `POST /packs/auto-trigger?days_ahead=N` — finds every `rent_review_trigger` event in the horizon with no pack yet and queues generation; idempotent
@@ -573,7 +582,7 @@ When ready, options are:
 ### 9.1 Extraction quality (originally Week-2 PRD work)
 
 - ✅ **Two-pass extraction** with disagreement-based confidence — neutral + skeptical-senior-surveyor passes, merged with confidence override
-- **Side-letter / variation overlay** logic — schema supports it, the worker doesn't merge yet
+- ✅ **Side-letter / variation attachment + AI summary** — attach as ancillary docs, get a structured markdown summary (type/date/parties/effects/risk flags) inline in the right rail; full overlay-onto-parent-record merge is still 📋 follow-up work
 - **Bounding-box highlighting** on the PDF viewer (citations have page + quote but no bbox yet)
 - **Prefer stated over computed dates** — when the lease text explicitly states a deadline (e.g. "31 October 2026"), prefer that over the mathematically-derived date
 

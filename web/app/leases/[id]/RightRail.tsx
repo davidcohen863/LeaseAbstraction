@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { differenceInDays, format, parseISO } from "date-fns";
@@ -12,8 +12,19 @@ import {
   ExternalLink,
   FileText,
   Package,
+  Paperclip,
+  Plus,
+  Trash2,
+  AlertCircle,
 } from "lucide-react";
-import { api, type LeaseDetail, type LeaseEvent, type PackSummary } from "@/lib/api";
+import {
+  api,
+  type AncillaryDocumentRole,
+  type DocumentOut,
+  type LeaseDetail,
+  type LeaseEvent,
+  type PackSummary,
+} from "@/lib/api";
 import { StatusPill } from "@/components/ui/status-pill";
 
 const CRITICAL_TYPES = new Set([
@@ -26,9 +37,10 @@ const CRITICAL_TYPES = new Set([
 interface Props {
   lease: LeaseDetail;
   onApprove: () => Promise<void>;
+  onChanged: () => Promise<void>;
 }
 
-export function RightRail({ lease, onApprove }: Props) {
+export function RightRail({ lease, onApprove, onChanged }: Props) {
   const router = useRouter();
   const [events, setEvents] = useState<LeaseEvent[] | null>(null);
   const [packs, setPacks] = useState<PackSummary[] | null>(null);
@@ -175,6 +187,9 @@ export function RightRail({ lease, onApprove }: Props) {
         </ul>
       </section>
 
+      {/* Side-letters / variations / licences */}
+      <AttachedDocs lease={lease} onChanged={onChanged} />
+
       {/* Packs for this lease */}
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <div className="flex items-center justify-between mb-2">
@@ -240,6 +255,186 @@ export function RightRail({ lease, onApprove }: Props) {
         </div>
       </section>
     </aside>
+  );
+}
+
+// ---- Attached side-letters / variations / licences ---------------------
+
+const ROLE_LABELS: Record<string, string> = {
+  side_letter: "Side-letter",
+  variation: "Deed of variation",
+  licence_to_alter: "Licence to alter",
+  licence_to_assign: "Licence to assign",
+  rent_deposit_deed: "Rent deposit deed",
+  schedule_of_condition: "Schedule of condition",
+  other: "Other",
+};
+
+function AttachedDocs({ lease, onChanged }: { lease: LeaseDetail; onChanged: () => Promise<void> }) {
+  const ancillaries = lease.documents.filter((d) => d.role !== "lease");
+  const [uploading, setUploading] = useState(false);
+  const [pickRole, setPickRole] = useState<AncillaryDocumentRole>("side_letter");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Poll while any attached doc is mid-summarising
+  useEffect(() => {
+    if (!ancillaries.some((d) => d.summary_status === "pending" || d.summary_status === "summarising")) return;
+    const id = setInterval(() => {
+      void onChanged();
+    }, 3000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ancillaries.map((d) => d.summary_status).join("|")]);
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        await api.attachDocument(lease.id, file, pickRole);
+      }
+      await onChanged();
+    } catch (e) {
+      alert(`Upload failed: ${e}`);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-neutral-200 bg-white p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 flex items-center gap-1.5">
+          <Paperclip size={12} />
+          Side-letters &amp; variations
+        </div>
+        {ancillaries.length > 0 && (
+          <span className="text-xs text-neutral-400 tabular-nums">{ancillaries.length}</span>
+        )}
+      </div>
+
+      {ancillaries.length === 0 ? (
+        <p className="text-xs text-neutral-500 mb-3">
+          No ancillary documents attached. Add side-letters, deeds of variation, or licences to alter.
+        </p>
+      ) : (
+        <ul className="space-y-2 mb-3">
+          {ancillaries.map((d) => (
+            <AncillaryItem key={d.id} doc={d} leaseId={lease.id} onChanged={onChanged} />
+          ))}
+        </ul>
+      )}
+
+      <div className="flex items-center gap-2">
+        <select
+          value={pickRole}
+          onChange={(e) => setPickRole(e.target.value as AncillaryDocumentRole)}
+          className="flex-1 rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs focus:border-neutral-500 focus:outline-none"
+          disabled={uploading}
+        >
+          {Object.entries(ROLE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
+        <label
+          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium cursor-pointer ${
+            uploading ? "bg-neutral-200 text-neutral-500" : "bg-neutral-900 text-white hover:bg-neutral-700"
+          }`}
+        >
+          <Plus size={12} />
+          {uploading ? "Uploading…" : "Attach"}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf"
+            disabled={uploading}
+            className="hidden"
+            onChange={(e) => handleFiles(e.target.files)}
+          />
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function AncillaryItem({ doc, leaseId, onChanged }: { doc: DocumentOut; leaseId: string; onChanged: () => Promise<void> }) {
+  const [expanded, setExpanded] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteDoc() {
+    if (!confirm(`Delete "${doc.filename}"?`)) return;
+    setDeleting(true);
+    try {
+      await api.deleteAttachedDocument(leaseId, doc.id);
+      await onChanged();
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const roleLabel = ROLE_LABELS[doc.role] ?? doc.role;
+  const status = doc.summary_status;
+
+  return (
+    <li className="rounded border border-neutral-200 bg-neutral-50/40 p-2 text-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700">
+              {roleLabel}
+            </span>
+            {status === "pending" && <span className="text-[10px] text-amber-700">queued</span>}
+            {status === "summarising" && <span className="text-[10px] text-amber-700">summarising…</span>}
+            {status === "done" && <span className="text-[10px] text-emerald-700">summarised ✓</span>}
+            {status === "failed" && <span className="text-[10px] text-red-700">failed</span>}
+          </div>
+          <div className="mt-0.5 truncate font-medium text-neutral-900" title={doc.filename}>
+            {doc.filename}
+          </div>
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <a
+            href={api.ancillaryDocumentUrl(leaseId, doc.id)}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
+            title="Download"
+          >
+            <Download size={12} />
+          </a>
+          <button
+            onClick={deleteDoc}
+            disabled={deleting}
+            className="rounded p-1 text-neutral-500 hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
+            title="Delete"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+
+      {(status === "done" || status === "failed") && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1.5 text-[11px] text-blue-700 hover:underline"
+        >
+          {expanded ? "Hide summary" : "Show summary"}
+        </button>
+      )}
+
+      {expanded && status === "done" && doc.summary_markdown && (
+        <pre className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap rounded bg-white p-2 text-[11px] leading-relaxed text-neutral-800 border border-neutral-200">
+          {doc.summary_markdown}
+        </pre>
+      )}
+      {expanded && status === "failed" && doc.summary_error && (
+        <div className="mt-2 flex items-start gap-1 rounded bg-red-50 p-2 text-[11px] text-red-800 border border-red-200">
+          <AlertCircle size={12} className="mt-0.5 shrink-0" />
+          <span className="whitespace-pre-wrap">{doc.summary_error.split("\n")[0]}</span>
+        </div>
+      )}
+    </li>
   );
 }
 

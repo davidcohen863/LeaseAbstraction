@@ -129,6 +129,7 @@ export default function LeaseDetailPage({ params }: { params: Promise<{ id: stri
                 await api.approve(id);
                 await load();
               }}
+              onChanged={load}
             />
           </div>
         </div>

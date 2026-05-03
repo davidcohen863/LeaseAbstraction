@@ -138,11 +138,20 @@ class Document(Base):
     lease_id: Mapped[str] = mapped_column(String(36), ForeignKey("leases.id"), index=True)
     filename: Mapped[str] = mapped_column(String(512))
     storage_path: Mapped[str] = mapped_column(String(1024))
-    role: Mapped[str] = mapped_column(String(32), default="lease")  # 'lease' | 'side_letter' | 'variation'
+    role: Mapped[str] = mapped_column(String(32), default="lease")  # 'lease' | 'side_letter' | 'variation' | 'licence_to_alter'
     pages: Mapped[int | None] = mapped_column(Integer)
     sha256: Mapped[str | None] = mapped_column(String(64))
     size_bytes: Mapped[int | None] = mapped_column(Integer)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # AI-generated summary (for side-letters / variations / licences). The
+    # principal lease's structured record lives on Lease.record_json — this
+    # field is markdown prose for ancillary docs the surveyor needs to know
+    # about but doesn't get a full schema for.
+    summary_markdown: Mapped[str | None] = mapped_column(Text)
+    summary_seconds: Mapped[float | None] = mapped_column(Float)
+    summary_status: Mapped[str] = mapped_column(String(32), default="pending")  # pending | summarising | done | failed | skipped
+    summary_error: Mapped[str | None] = mapped_column(Text)
 
     lease: Mapped[Lease] = relationship(back_populates="documents")
 

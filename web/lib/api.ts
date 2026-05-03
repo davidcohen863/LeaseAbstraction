@@ -27,9 +27,31 @@ export interface LeaseSummary {
   property_address: string | null;
 }
 
+export type AncillaryDocumentRole =
+  | "lease"
+  | "side_letter"
+  | "variation"
+  | "licence_to_alter"
+  | "licence_to_assign"
+  | "rent_deposit_deed"
+  | "schedule_of_condition"
+  | "other";
+
+export interface DocumentOut {
+  id: string;
+  filename: string;
+  role: AncillaryDocumentRole | string;
+  uploaded_at: string;
+  summary_status: "pending" | "summarising" | "done" | "failed" | "skipped" | string;
+  summary_markdown: string | null;
+  summary_seconds: number | null;
+  summary_error: string | null;
+}
+
 export interface LeaseDetail extends LeaseSummary {
   record_json: Record<string, unknown> | null;
   extraction_error: string | null;
+  documents: DocumentOut[];
 }
 
 export interface PropertySummary {
@@ -155,6 +177,25 @@ export const api = {
   },
 
   documentUrl: (id: string) => `${API_URL}/leases/${id}/document`,
+  ancillaryDocumentUrl: (leaseId: string, docId: string) =>
+    `${API_URL}/leases/${leaseId}/documents/${docId}`,
+  attachDocument: async (
+    leaseId: string,
+    file: File,
+    role: AncillaryDocumentRole = "side_letter",
+    opts?: FetchOpts
+  ): Promise<DocumentOut> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("role", role);
+    return call<DocumentOut>(`/leases/${leaseId}/documents`, {
+      method: "POST",
+      body: fd,
+      ...opts,
+    });
+  },
+  deleteAttachedDocument: (leaseId: string, docId: string, opts?: FetchOpts) =>
+    call<void>(`/leases/${leaseId}/documents/${docId}`, { method: "DELETE", ...opts }),
 
   patchField: (
     id: string,

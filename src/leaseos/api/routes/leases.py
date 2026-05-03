@@ -36,9 +36,21 @@ class LeaseSummary(BaseModel):
     property_address: str | None = None
 
 
+class DocumentOut(BaseModel):
+    id: str
+    filename: str
+    role: str
+    uploaded_at: datetime
+    summary_status: str
+    summary_markdown: str | None
+    summary_seconds: float | None
+    summary_error: str | None
+
+
 class LeaseDetail(LeaseSummary):
     record_json: dict | None
     extraction_error: str | None
+    documents: list[DocumentOut] = []
 
 
 class FieldPatch(BaseModel):
@@ -123,6 +135,19 @@ def get_lease(
         property_address=lease.property.address if lease.property else None,
         record_json=lease.record_json,
         extraction_error=lease.extraction_error,
+        documents=[
+            DocumentOut(
+                id=d.id,
+                filename=d.filename,
+                role=d.role,
+                uploaded_at=d.uploaded_at,
+                summary_status=d.summary_status,
+                summary_markdown=d.summary_markdown,
+                summary_seconds=d.summary_seconds,
+                summary_error=d.summary_error,
+            )
+            for d in lease.documents
+        ],
     )
 
 
@@ -132,16 +157,125 @@ def get_document(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Stream the original PDF back so the frontend can render it."""
+    """Stream the principal lease PDF back (the first 'lease'-role doc)."""
     from fastapi.responses import FileResponse
 
     lease = db.get(Lease, lease_id)
     if lease is None or not lease.documents:
         raise HTTPException(404, "Lease or document not found")
-    doc = lease.documents[0]
+    # Prefer a role='lease' doc, fall back to the first
+    doc = next((d for d in lease.documents if d.role == "lease"), lease.documents[0])
     if not Path(doc.storage_path).exists():
         raise HTTPException(404, "Document file missing on disk")
     return FileResponse(doc.storage_path, media_type="application/pdf", filename=doc.filename)
+
+
+@router.get("/{lease_id}/documents/{document_id}")
+def get_lease_document_by_id(
+    lease_id: str,
+    document_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Stream a specific document attached to the lease (for side-letter download)."""
+    from fastapi.responses import FileResponse
+
+    lease = db.get(Lease, lease_id)
+    if lease is None:
+        raise HTTPException(404, "Lease not found")
+    doc = next((d for d in lease.documents if d.id == document_id), None)
+    if doc is None:
+        raise HTTPException(404, "Document not found")
+    if not Path(doc.storage_path).exists():
+        raise HTTPException(404, "Document file missing on disk")
+    return FileResponse(doc.storage_path, media_type="application/pdf", filename=doc.filename)
+
+
+@router.post("/{lease_id}/documents", response_model=DocumentOut, status_code=201)
+async def attach_document(
+    lease_id: str,
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    role: str = Form(default="side_letter"),
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> DocumentOut:
+    """Attach an ancillary document (side-letter, deed of variation, licence
+    to alter, rent deposit deed etc.) to an existing lease and queue an
+    AI summary in the background.
+    """
+    if role == "lease":
+        raise HTTPException(400, "Use POST /leases for the principal lease document")
+    if role not in {"side_letter", "variation", "licence_to_alter", "licence_to_assign", "rent_deposit_deed", "schedule_of_condition", "other"}:
+        raise HTTPException(400, f"Unknown document role {role!r}")
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Only PDF uploads are accepted")
+
+    lease = db.get(Lease, lease_id)
+    if lease is None:
+        raise HTTPException(404, "Lease not found")
+
+    settings = get_settings()
+    settings.storage_dir.mkdir(parents=True, exist_ok=True)
+    raw = await file.read()
+    sha = hashlib.sha256(raw).hexdigest()
+
+    # Use a unique filename to avoid collisions on the disk
+    import uuid as _uuid
+    storage_path = settings.storage_dir / f"{_uuid.uuid4()}__{file.filename}"
+    storage_path.write_bytes(raw)
+
+    from ..worker import run_ancillary_summary
+
+    doc = Document(
+        lease_id=lease.id,
+        filename=file.filename,
+        storage_path=str(storage_path),
+        role=role,
+        sha256=sha,
+        size_bytes=len(raw),
+        summary_status="pending",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    # Queue the summary
+    background.add_task(run_ancillary_summary, doc.id)
+
+    return DocumentOut(
+        id=doc.id,
+        filename=doc.filename,
+        role=doc.role,
+        uploaded_at=doc.uploaded_at,
+        summary_status=doc.summary_status,
+        summary_markdown=doc.summary_markdown,
+        summary_seconds=doc.summary_seconds,
+        summary_error=doc.summary_error,
+    )
+
+
+@router.delete("/{lease_id}/documents/{document_id}", status_code=204)
+def delete_attached_document(
+    lease_id: str,
+    document_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Remove an ancillary document. Does NOT allow deleting the principal
+    lease PDF (role='lease') — to remove that, delete the whole lease."""
+    lease = db.get(Lease, lease_id)
+    if lease is None:
+        raise HTTPException(404, "Lease not found")
+    doc = next((d for d in lease.documents if d.id == document_id), None)
+    if doc is None:
+        raise HTTPException(404, "Document not found")
+    if doc.role == "lease":
+        raise HTTPException(400, "Cannot delete the principal lease PDF here")
+    db.delete(doc)
+    db.commit()
+    # We deliberately leave the file on disk as a soft-delete; clean-up
+    # is for a separate housekeeping job once we have one.
 
 
 @router.patch("/{lease_id}/fields/{field_path:path}")

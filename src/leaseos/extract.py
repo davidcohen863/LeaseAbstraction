@@ -17,7 +17,12 @@ from anthropic import Anthropic
 from pydantic import ValidationError
 
 from .pdf import LoadedPDF
-from .prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_SKEPTICAL, USER_PRIMER
+from .prompts import (
+    SIDE_LETTER_SUMMARY_PROMPT,
+    SYSTEM_PROMPT,
+    SYSTEM_PROMPT_SKEPTICAL,
+    USER_PRIMER,
+)
 from .schema import LeaseRecord, lease_record_json_schema
 
 
@@ -265,3 +270,90 @@ def _strip_meta(v):
     if isinstance(v, list):
         return [_strip_meta(x) for x in v]
     return v
+
+
+# ---- Side-letter / variation / licence summarisation -------------------
+
+
+@dataclass
+class SummaryResult:
+    markdown: str
+    model: str
+    elapsed_seconds: float
+    input_tokens: int
+    output_tokens: int
+
+
+def summarise_ancillary_doc(
+    pdf: LoadedPDF,
+    *,
+    parent_lease_summary: str | None = None,
+    model: str | None = None,
+    max_tokens: int = 2000,
+) -> SummaryResult:
+    """Produce a structured markdown summary of an ancillary document
+    (side-letter, deed of variation, licence to alter etc.) attached to a
+    principal lease.
+
+    `parent_lease_summary` is an optional 1-2 sentence summary of the parent
+    lease so the model can frame the side-letter relative to it.
+
+    Returns prose markdown — does NOT call any tool. Cheap (~£0.02/doc since
+    side-letters are typically 1-3 pages).
+    """
+    client = Anthropic()
+    chosen_model = model or DEFAULT_MODEL
+
+    user_blocks: list[dict] = []
+    if parent_lease_summary:
+        user_blocks.append({
+            "type": "text",
+            "text": f"# Context — the principal lease\n\n{parent_lease_summary}\n\n# The ancillary document follows",
+        })
+    else:
+        user_blocks.append({
+            "type": "text",
+            "text": "# The ancillary document follows. Summarise it relative to the lease it modifies.",
+        })
+
+    for page in pdf.pages:
+        if page.text.strip():
+            user_blocks.append({
+                "type": "text",
+                "text": f"--- Page {page.number} (native text) ---\n{page.text}",
+            })
+        user_blocks.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": page.image_b64},
+        })
+    if user_blocks:
+        user_blocks[-1]["cache_control"] = {"type": "ephemeral"}
+
+    started = time.monotonic()
+    response = client.messages.create(
+        model=chosen_model,
+        max_tokens=max_tokens,
+        system=[{
+            "type": "text",
+            "text": SIDE_LETTER_SUMMARY_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        }],
+        messages=[{"role": "user", "content": user_blocks}],
+    )
+    elapsed = time.monotonic() - started
+
+    # Concatenate any text blocks the model returned
+    parts: list[str] = []
+    for block in response.content:
+        if getattr(block, "type", None) == "text":
+            parts.append(block.text)
+    markdown = "\n\n".join(parts).strip() or "(model returned no summary text)"
+
+    usage = response.usage
+    return SummaryResult(
+        markdown=markdown,
+        model=chosen_model,
+        elapsed_seconds=elapsed,
+        input_tokens=getattr(usage, "input_tokens", 0),
+        output_tokens=getattr(usage, "output_tokens", 0),
+    )

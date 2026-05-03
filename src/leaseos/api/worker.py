@@ -12,11 +12,11 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..extract import extract_two_pass
+from ..extract import extract_two_pass, summarise_ancillary_doc
 from ..pdf import load_pdf
 from .db import SessionLocal
 from .events import derive_events
-from .models import Lease, LeaseEvent, LeaseStatus, Property, normalise_address
+from .models import Document, Lease, LeaseEvent, LeaseStatus, Property, normalise_address
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +68,59 @@ def run_extraction(lease_id: str, pdf_path: str) -> None:
                 )
             )
         db.commit()
+    finally:
+        db.close()
+
+
+def run_ancillary_summary(document_id: str) -> None:
+    """Background task: summarise an ancillary document (side-letter,
+    deed of variation, licence to alter etc.) attached to a lease.
+
+    Cheap (~£0.02–0.05 per doc, 10–30s typically) since side-letters are
+    short. Failure is non-fatal — the file remains attached, the surveyor
+    can still view it; only the summary is missing.
+    """
+    db: Session = SessionLocal()
+    try:
+        doc = db.get(Document, document_id)
+        if doc is None:
+            log.warning("Ancillary summary requested for unknown document %s", document_id)
+            return
+        doc.summary_status = "summarising"
+        db.commit()
+
+        try:
+            pdf = load_pdf(Path(doc.storage_path))
+            # Build a brief context summary from the parent lease record
+            lease = db.get(Lease, doc.lease_id)
+            parent_summary: str | None = None
+            if lease is not None and lease.record_json:
+                rec = lease.record_json
+                addr = (rec.get("premises_address") or {}).get("value")
+                landlord = (rec.get("landlord") or {}).get("name")
+                tenant = (rec.get("tenant") or {}).get("name")
+                term_start = (rec.get("term_start") or {}).get("value")
+                term_expiry = (rec.get("term_expiry") or {}).get("value")
+                rent = (rec.get("initial_rent_gbp") or {}).get("value")
+                parent_summary = (
+                    f"Lease of {addr} between {landlord} (landlord) and {tenant} (tenant), "
+                    f"{term_start} → {term_expiry}, initial rent £{rent}."
+                )
+
+            result = summarise_ancillary_doc(pdf, parent_lease_summary=parent_summary)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Ancillary summary failed for document %s", doc.id)
+            doc.summary_status = "failed"
+            doc.summary_error = f"{exc}\n\n{traceback.format_exc()[-1500:]}"
+            db.commit()
+            return
+
+        doc.summary_markdown = result.markdown
+        doc.summary_seconds = round(result.elapsed_seconds, 2)
+        doc.summary_status = "done"
+        doc.summary_error = None
+        db.commit()
+        log.info("Ancillary summary complete for %s in %.1fs", doc.id, result.elapsed_seconds)
     finally:
         db.close()
 

@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the code review + first pytest suite)
+- Last updated: 2026-05-03 (after Alembic migrations + dev-DB drift cleanup)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -350,7 +350,11 @@ leaseos/
     trigger_pending_packs.py   # Cron-friendly POST to /packs/auto-trigger
     migrate_documents.py       # Add side-letter summary columns to documents table
   data/                      # Local SQLite DB + uploaded documents + generated packs (gitignored)
-  Dockerfile                 # Production image for the API
+  alembic/                   # Migrations — env.py reads DATABASE_URL from settings;
+                             #   versions/ has baseline + dev-drift-cleanup
+  alembic.ini                # Alembic config (sqlalchemy.url overridden in env.py)
+  scripts/db.sh              # Wrapper: scripts/db.sh upgrade / current / new "msg"
+  Dockerfile                 # Production image — CMD runs `alembic upgrade head` first
   render.yaml                # Render Blueprint (API + Postgres + nightly cron)
   web/vercel.json            # Vercel config
   README.md   PRD.md   context.md   UX_PLAN.md   DEPLOY.md   CLAUDE.md
@@ -554,6 +558,12 @@ leaseos eval
 
 # Backfill Properties for existing leases + add new Property columns
 .venv/bin/python scripts/backfill_properties.py
+
+# Database migrations (Alembic)
+scripts/db.sh upgrade                        # apply pending migrations
+scripts/db.sh current                        # which revision are we on?
+scripts/db.sh new "added foo column"         # autogenerate a new migration after a model change
+scripts/db.sh check                          # detect drift between model and DB
 ```
 
 ### 7.5 Frontend keyboard shortcuts
@@ -607,7 +617,7 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - OAuth state currently in-memory (a `dict` in `routes/integrations.py`) — fine for one server, won't survive restart or multi-instance. Move to Redis/DB before scaling.
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 66 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation regression. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
-- **Alembic migrations** — currently `init_db()` autocreates; needed before first prod schema change.
+- ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
 
 ### 9.5 The bigger product roadmap
 

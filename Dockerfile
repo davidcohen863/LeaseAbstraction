@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml ./
 COPY src ./src
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
 RUN pip install --upgrade pip && pip install .
 
 # Non-root user
@@ -27,5 +29,7 @@ USER app
 
 EXPOSE 8000
 
-# Render injects PORT — fall back to 8000 locally
-CMD ["sh", "-c", "uvicorn leaseos.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Run pending migrations, THEN serve. Idempotent — `alembic upgrade head`
+# is a no-op if the DB is already at head. Render injects PORT — fall back
+# to 8000 locally.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn leaseos.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

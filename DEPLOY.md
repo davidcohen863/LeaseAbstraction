@@ -60,9 +60,11 @@ gh repo create leaseos --private --source=. --push   # or do it via the GitHub U
    | `MS_REDIRECT_URI` | `https://leaseos-api.onrender.com/integrations/microsoft/callback` |
    | `SLACK_DEFAULT_WEBHOOK_URL` | (optional) firm-wide fallback webhook |
 
-4. The first deploy creates the DB tables automatically (`init_db()` in `lifespan`).
+4. The container's CMD runs `alembic upgrade head` before starting uvicorn — schema is applied (or upgraded) on every boot. The very first deploy applies the baseline + drift-cleanup migrations automatically.
 5. Once live, hit `https://leaseos-api.onrender.com/health` — should return `{"ok": true}`.
 6. Set the cron's `LEASEOS_API_URL` to your Render API URL.
+
+> **Schema changes after deploy**: edit a model, run `scripts/db.sh new "what changed"` locally to autogenerate a migration, review it, commit, push. Render will `alembic upgrade head` on the next deploy.
 
 ---
 

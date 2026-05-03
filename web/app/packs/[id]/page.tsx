@@ -135,30 +135,121 @@ function NumberCell({ label, value, suffix = "", highlight = false }: { label: s
 }
 
 function SettleButton({ pack, onChanged }: { pack: PackDetail; onChanged: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [value, setValue] = useState<string>(
+    pack.recommended_settlement_low_gbp ? String(pack.recommended_settlement_low_gbp) : ""
+  );
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const num = parseFloat(value.replace(/[,£\s]/g, ""));
+    if (!Number.isFinite(num) || num <= 0) {
+      setError("Enter a positive number, e.g. 53500");
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await api.settlePack(pack.id, num);
+      await onChanged();
+      setOpen(false);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const uplift = (() => {
+    const num = parseFloat(value.replace(/[,£\s]/g, ""));
+    if (!Number.isFinite(num) || !pack.current_rent_gbp) return null;
+    const diff = num - pack.current_rent_gbp;
+    const pct = (diff / pack.current_rent_gbp) * 100;
+    return { diff, pct };
+  })();
+
   return (
-    <button
-      disabled={busy || pack.status === "settled"}
-      onClick={async () => {
-        const raw = window.prompt(
-          "Record settled rent (£/year):",
-          pack.recommended_settlement_low_gbp ? String(pack.recommended_settlement_low_gbp) : ""
-        );
-        if (!raw) return;
-        const num = parseFloat(raw.replace(/[, £]/g, ""));
-        if (Number.isNaN(num)) return alert("Enter a number.");
-        setBusy(true);
-        try {
-          await api.settlePack(pack.id, num);
-          await onChanged();
-        } finally {
-          setBusy(false);
-        }
-      }}
-      className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
-    >
-      {pack.status === "settled" ? "Settled" : busy ? "Saving…" : "Record settlement"}
-    </button>
+    <>
+      <button
+        disabled={pack.status === "settled"}
+        onClick={() => setOpen(true)}
+        className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+      >
+        {pack.status === "settled" ? "Settled" : "Record settlement"}
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settle-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setOpen(false);
+          }}
+        >
+          <form
+            onSubmit={submit}
+            className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
+          >
+            <h2 id="settle-title" className="text-base font-semibold">Record settled rent</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Enter the figure you settled at. This locks the pack as settled and adds the deal as an internal comparable for future reviews.
+            </p>
+
+            <label className="mt-4 block text-sm">
+              <span className="text-neutral-700">Settled rent (£/year)</span>
+              <div className="mt-1 flex rounded-md border border-neutral-300 focus-within:border-neutral-500 focus-within:ring-1 focus-within:ring-neutral-500">
+                <span className="flex items-center px-3 text-neutral-400">£</span>
+                <input
+                  autoFocus
+                  inputMode="decimal"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="53,500"
+                  className="flex-1 rounded-r-md bg-transparent py-2 pr-3 text-sm focus:outline-none"
+                />
+              </div>
+            </label>
+
+            {pack.recommended_settlement_low_gbp && pack.recommended_settlement_high_gbp && (
+              <div className="mt-2 text-xs text-neutral-500">
+                Recommended range: £{pack.recommended_settlement_low_gbp.toLocaleString()} – £{pack.recommended_settlement_high_gbp.toLocaleString()}
+              </div>
+            )}
+            {uplift && (
+              <div className={`mt-2 text-sm font-medium ${uplift.diff >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                {uplift.diff >= 0 ? "Uplift" : "Decrease"}: £{Math.abs(uplift.diff).toLocaleString()} ({uplift.pct.toFixed(1)}%)
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">{error}</div>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm hover:bg-neutral-50"
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busy || !value.trim()}
+                className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {busy ? "Saving…" : "Record settlement"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
   );
 }
 

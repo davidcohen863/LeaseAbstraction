@@ -23,15 +23,16 @@ const EVENT_LABEL: Record<string, string> = {
   epc_expiry: "EPC expiry",
 };
 
+// Bold pills — colour-coded by event class, readable at a glance.
 const EVENT_STYLE: Record<string, string> = {
-  rent_review_trigger: "bg-blue-100 text-blue-800",
-  rent_review_effective: "bg-blue-100 text-blue-800",
-  break_notice_deadline: "bg-red-100 text-red-800",
-  break_date: "bg-amber-100 text-amber-800",
-  lease_expiry: "bg-purple-100 text-purple-800",
-  deposit_return: "bg-emerald-100 text-emerald-800",
-  insurance_renewal: "bg-sky-100 text-sky-800",
-  epc_expiry: "bg-orange-100 text-orange-800",
+  rent_review_trigger: "bg-blue-600 text-white",
+  rent_review_effective: "bg-blue-600 text-white",
+  break_notice_deadline: "bg-red-600 text-white",
+  break_date: "bg-amber-500 text-white",
+  lease_expiry: "bg-violet-600 text-white",
+  deposit_return: "bg-emerald-600 text-white",
+  insurance_renewal: "bg-sky-600 text-white",
+  epc_expiry: "bg-orange-500 text-white",
 };
 
 interface YearGroup {

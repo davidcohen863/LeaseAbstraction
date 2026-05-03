@@ -6,11 +6,11 @@ import { format, parseISO } from "date-fns";
 import { api, type PackSummary, type PackStatus } from "@/lib/api";
 
 const STATUS_STYLE: Record<PackStatus, string> = {
-  generating: "bg-amber-100 text-amber-800",
-  draft: "bg-blue-100 text-blue-800",
-  sent: "bg-violet-100 text-violet-800",
-  settled: "bg-emerald-100 text-emerald-800",
-  failed: "bg-red-100 text-red-800",
+  generating: "bg-amber-500 text-white",
+  draft: "bg-blue-600 text-white",
+  sent: "bg-violet-600 text-white",
+  settled: "bg-emerald-600 text-white",
+  failed: "bg-red-600 text-white",
 };
 
 export default function PacksListPage() {

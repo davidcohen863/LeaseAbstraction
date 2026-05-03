@@ -2,11 +2,13 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03
+- Last updated: 2026-05-03 (after the P0 UX shell upgrade)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
-- Status: v0 working locally, pre-deploy
+- Status: **v0.3 working locally — extraction + reviewer + calendar + pack generator + new sidebar/Today shell.** Pre-deploy.
+
+> **Companion docs (single index):** **[`PRD.md`](./PRD.md)** for status of every milestone; **[`UX_PLAN.md`](./UX_PLAN.md)** for the UI/UX redesign roadmap; **[`README.md`](./README.md)** to run locally; **[`DEPLOY.md`](./DEPLOY.md)** to ship.
 
 ---
 
@@ -259,74 +261,123 @@ Repo: `~/Desktop/leaseos/` (mirror at https://github.com/davidcohen863/LeaseAbst
 
 - **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0, Pydantic v2, Anthropic Python SDK
 - **Models**: Claude Sonnet 4.6 (default), Opus 4.7 1M context (long leases >120 pages)
-- **PDF**: PyMuPDF (native text + 150-DPI page rasterisation)
+- **PDF I/O**: PyMuPDF (read — native text + 150-DPI page rasterisation), python-docx + reportlab (write — pack documents, demo lease)
 - **DB**: SQLite locally, Postgres in production (same SQLAlchemy code)
-- **Frontend**: Next.js 16 (App Router, Turbopack), React 19, Tailwind, react-pdf
+- **Frontend**: Next.js 16 (App Router, Turbopack), React 19, Tailwind v4, react-pdf
+- **UI lib additions (P0 shell)**: lucide-react (icons), cmdk (command palette)
 - **Auth**: Clerk (optional in dev — auto-disabled if env vars missing)
-- **Hosting target**: Render (API + Postgres) + Vercel (frontend)
+- **Hosting target**: Render (API + Postgres) + Vercel (frontend) — currently paused; Fly/HF Spaces/Cloudflare Tunnel as free alternatives
 
 ### 6.2 Code structure
 
 ```
 leaseos/
   src/leaseos/
-    schema.py             # Pydantic LeaseRecord — 23 fields + per-field Citation
-    pdf.py                # PyMuPDF loader (text + rasterised page images)
-    prompts.py            # Extraction system prompt (UK lease dialect)
-    extract.py            # Anthropic call with forced tool-use + prompt caching
-    cli.py                # `leaseos abstract <pdf>` and `leaseos eval`
-    eval_harness.py       # Run extraction across YAML ground-truth corpus
+    schema.py                # Pydantic LeaseRecord — 23 fields + per-field Citation
+    pdf.py                   # PyMuPDF loader (text + rasterised page images)
+    prompts.py               # Extraction + pack-generator system prompts
+    extract.py               # Anthropic call: forced tool-use + prompt caching
+    pack_generator.py        # Rent-review pack: Claude tool-use + python-docx render
+    cli.py                   # `leaseos abstract <pdf>` and `leaseos eval`
+    eval_harness.py          # Run extraction across YAML ground-truth corpus
     api/
-      main.py             # FastAPI app + lifespan + CORS
-      config.py           # Env vars (with override=True dotenv)
-      db.py               # SQLAlchemy session
-      models.py           # Lease, Document, LeaseEvent, FieldEdit, OAuthToken, ...
-      auth.py             # Clerk JWT verification (no-auth dev fallback)
-      events.py           # Derive LeaseEvent rows from a LeaseRecord
-      worker.py           # Background extraction task
+      main.py                # FastAPI app + lifespan + CORS
+      config.py              # Env vars (with override=True dotenv)
+      db.py                  # SQLAlchemy session
+      models.py              # Lease, Document, LeaseEvent, FieldEdit, OAuthToken,
+                             #   Comparable, RentReviewPack, PackDocument, ...
+      auth.py                # Clerk JWT verification (no-auth dev fallback)
+      events.py              # Derive LeaseEvent rows from a LeaseRecord
+      worker.py              # Background extraction task
+      pack_worker.py         # Background pack-generation task
       routes/
-        leases.py         # Upload, list, detail, document, patch field, approve
-        events.py         # List + acknowledge calendar events
-        integrations.py   # Slack config + Google/Microsoft OAuth + event push
+        leases.py            # Upload, list, detail, document, patch field, approve
+        events.py            # List + acknowledge calendar events
+        comparables.py       # CRUD for market evidence
+        packs.py             # Generate / list / detail / download / settle packs
+        integrations.py      # Slack config + Google/Microsoft OAuth + event push
     integrations/
-      slack.py            # Webhook digest sender
-      google.py           # Google Calendar OAuth + event push
-      microsoft.py        # Microsoft Graph OAuth + event push
+      slack.py               # Webhook digest sender
+      google.py              # Google Calendar OAuth + event push
+      microsoft.py           # Microsoft Graph OAuth + event push
   web/
     app/
-      layout.tsx          # ClerkProvider inside body, header, nav
-      page.tsx            # Landing page
-      leases/page.tsx     # Upload + polling list
-      leases/[id]/        # Reviewer split-screen (PdfViewer + FieldsPanel)
-      calendar/page.tsx   # All events grouped by year, with soon/overdue states
-      integrations/page.tsx
-    proxy.ts              # Next.js 16 proxy (was middleware) wiring Clerk
-    lib/api.ts            # Typed fetch client for the FastAPI backend
-    lib/clerk.ts          # Optional-Clerk gate
+      layout.tsx             # P0 shell: Sidebar + Topbar + ClerkProvider
+      page.tsx               # 302 → /today
+      today/page.tsx         # Dashboard — KPIs, action this week, recent activity
+      leases/page.tsx        # Upload + polling list with live search
+      leases/[id]/           # Reviewer split-screen (PdfViewer + FieldsPanel)
+      calendar/page.tsx      # All events grouped by year, with soon/overdue states
+      comparables/page.tsx   # Market evidence table + add form
+      packs/page.tsx         # Rent-review packs list
+      packs/[id]/page.tsx    # Pack detail — 4 docs + headline numbers + settle modal
+      integrations/page.tsx  # Slack/Google/Outlook status cards
+    components/
+      nav/sidebar.tsx        # Collapsible sidebar nav (persists state)
+      nav/topbar.tsx         # Sticky topbar with search trigger + user menu
+      nav/notification-bell.tsx
+      ui/status-pill.tsx     # Centralised colour-coded status component
+      ui/command-palette.tsx # ⌘K global search (cmdk)
+    proxy.ts                 # Next.js 16 proxy (was middleware) wiring Clerk
+    lib/
+      api.ts                 # Typed fetch client for the FastAPI backend
+      clerk.ts               # Optional-Clerk gate
+      humanise.ts            # Enum → English label mappings
     public/pdf.worker.min.mjs   # Self-hosted pdf.js worker (CSP-friendly)
   scripts/
     generate_demo_lease.py   # Generates the Olive & Vine fictional lease PDF
     rederive_events.py       # Re-derive LeaseEvent rows without re-extraction
-  Dockerfile              # Production image for the API
-  render.yaml             # Render Blueprint (API + Postgres + nightly cron)
-  web/vercel.json         # Vercel config
-  DEPLOY.md               # Step-by-step deployment guide
+    seed_n8_comparables.py   # Seed 5 fictional N8 retail comparables
+  data/                      # Local SQLite DB + uploaded documents + generated packs (gitignored)
+  Dockerfile                 # Production image for the API
+  render.yaml                # Render Blueprint (API + Postgres + nightly cron)
+  web/vercel.json            # Vercel config
+  README.md   PRD.md   context.md   UX_PLAN.md   DEPLOY.md   CLAUDE.md
 ```
 
 ### 6.3 What works end-to-end (verified locally)
 
+**Extraction & reviewer**
 - **Upload** a real PDF → background extraction with Claude Sonnet 4.6
 - **Per-field citations** (page, clause reference, verbatim quote) for every extracted value
 - **Two confidence states** (high / low — currently single-pass placeholder, two-pass is week-2)
-- **Reviewer UI**: split-screen with click-to-jump-to-source; inline edit; approve workflow
-- **Critical Dates banner** at the top of the reviewer (break notice, rent review trigger, expiry)
-- **Calendar view**: every event grouped by year, with soon/overdue colouring
-- **Auto-derived events**: rent review (trigger + effective), break (notice + date), lease expiry, deposit return, **annual insurance renewal**, **EPC expiry**, with proper month-arithmetic (no 30.5-day approximation)
+- **Reviewer UI**: split-screen with click-to-jump-to-source; inline edit; approve workflow; humanised enum values; breadcrumbs; engineer telemetry hidden
+- **Critical Dates banner** at the top of the reviewer (break notice, rent review trigger, expiry) with inline "Generate pack" CTA on review-trigger items
+
+**Calendar & derived events**
+- **Calendar view**: every event grouped by year, with soon/overdue colouring; bold colour-coded event chips
+- **Auto-derived events**: rent review (trigger + effective), break (notice + date), lease expiry, deposit return, **annual insurance renewal**, **EPC expiry** — with proper month-arithmetic (no 30.5-day approximation)
 - **Recurring rent reviews**: cycle expansion using `rent_review.cycle_years`
-- **Slack** integration via webhook (paste-and-go)
+
+**Rent-review pack generator** (the killer feature)
+- **One-click pack generation** from any rent-review event
+- Four output documents: **landlord memo, comparables schedule, ITZA analysis, trigger letter** — all rendered as editable Word .docx
+- Markdown preview inline + Word download per document
+- Headline numbers (current rent, recommended opening, settlement range) as KPI strip
+- "Mark as sent" + **modal-based "Record settlement"** (with live uplift calc)
+- Settled rent feeds back to comparables as an internal data point
+- ~£0.20 per pack on Sonnet 4.6 with prompt caching
+
+**Comparables**
+- Manual CRUD (paste-from-EGi style) at `/comparables`
+- Seeded 5 fictional N8 retail comparables for the demo
+
+**P0 UX shell**
+- **Collapsible sidebar nav** with lucide icons; state persisted to localStorage
+- **Sticky topbar** with global search trigger
+- **⌘K command palette** — fuzzy search across leases / comparables / packs + quick-jump
+- **Notification bell** (stub for now)
+- **`/today` dashboard** — 5 KPI cards + "Action this week" + "Recent activity" feed; replaces the previous two-card landing
+- **Centralised `<StatusPill>`** component (deduplicates 3 colour maps)
+- **`<lib/humanise>`** layer — `fri` → `Full Repairing & Insuring`, `open_market` → `Open market`, etc.
+
+**Integrations**
+- **Slack** via webhook (paste-and-go)
 - **Google Calendar** OAuth + event push (code complete, needs OAuth client setup)
 - **Outlook / Microsoft Graph** OAuth + event push (code complete, needs Entra registration)
-- **Clerk auth** wiring (works with or without Clerk env vars set)
+
+**Auth**
+- **Clerk** wiring (works with or without Clerk env vars set)
 
 ### 6.4 Demo lease
 
@@ -404,7 +455,15 @@ leaseos eval
 
 # Regenerate the demo lease PDF (after editing the script)
 .venv/bin/python scripts/generate_demo_lease.py
+
+# Seed N8 comparables for the rent-review pack demo
+.venv/bin/python scripts/seed_n8_comparables.py
 ```
+
+### 7.5 Frontend keyboard shortcuts
+
+- **⌘K** (or Ctrl+K) — opens the global command palette from anywhere
+- **Esc** — closes the palette / modals
 
 ---
 
@@ -422,24 +481,39 @@ When ready, options are:
 
 ## 9. Known gaps & next steps
 
-### 9.1 Week-2 quality work
+> **Live status table:** see [`PRD.md`](./PRD.md) — this section is the narrative summary.
+
+### 9.1 Extraction quality (originally Week-2 PRD work)
 
 - **Two-pass extraction** with disagreement-based confidence (currently single-pass; the PRD requires two-pass to hit the 95% confidence calibration bar)
 - **Side-letter / variation overlay** logic — schema supports it, the worker doesn't merge yet
 - **Bounding-box highlighting** on the PDF viewer (citations have page + quote but no bbox yet)
 - **Prefer stated over computed dates** — when the lease text explicitly states a deadline (e.g. "31 October 2026"), prefer that over the mathematically-derived date
 
-### 9.2 Week-5 killer feature
+### 9.2 Pack generator follow-ups
 
-- **Rent-review pack generator** — at T-6 months, auto-build the landlord memo + comparables schedule + ITZA analysis + trigger letter as editable Word docs. This is the headline value prop.
+- **Auto-trigger cron** — find `rent_review_trigger` events whose date ≤ today + N days with no pack yet, generate, Slack-notify
+- **Per-firm Word .docx template upload** so packs render in firm house style
+- **Inline regenerate-with-new-comparables** button on the pack detail page
+- **Proper retail Zone-A/B masking** for ITZA (currently the model gives qualitative analysis only)
 
-### 9.3 Operational
+### 9.3 UI/UX milestones (active redesign track)
+
+The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
+
+- ✅ Six UX quick wins shipped (bold pills, hidden telemetry, humanised enums, settle modal, search, breadcrumbs)
+- ✅ **P0 — Shell upgrade** shipped (sidebar, topbar, ⌘K, /today, StatusPill)
+- 📋 **P1 — Workflow surfaces** (next): Properties as first-class entity, leases list filter rail, calendar month grid, `/reviews` kanban, lease-detail collapsible sections, comparables map, Word-style pack preview
+- 📋 **P2 — Polish + power-user**: Settings hub, activity feed, bbox highlight on citation click, j/k keyboard nav in reviewer, in-UI Slack form, accessibility audit, workspace switcher
+
+### 9.4 Operational
 
 - OAuth state currently in-memory (a `dict` in `routes/integrations.py`) — fine for one server, won't survive restart or multi-instance. Move to Redis/DB before scaling.
-- Background extraction runs in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if 50 uploads land at once.
-- No tests yet. Add pytest + a Playwright smoke test before shipping to a real customer.
+- Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
+- **No tests yet.** Add pytest + a Playwright smoke test before shipping to a real customer.
+- **Alembic migrations** — currently `init_db()` autocreates; needed before first prod schema change.
 
-### 9.4 The bigger product roadmap
+### 9.5 The bigger product roadmap
 
 Once the lease-abstraction pilot succeeds at Claridges:
 1. Pilot with 3 peer UK firms → £100–150k ARR design-partner revenue

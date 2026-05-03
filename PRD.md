@@ -8,6 +8,8 @@
 - Vision: vertical SaaS for UK commercial property agencies — start with lease abstraction, expand to dilapidations / inspections / acquisitions sourcing
 - Current state: **Local pilot fully working. Pre-deploy. P0 UX shell shipped.**
 
+> **Rule for AI agents in this repo:** every code commit must include updates to `context.md` and `PRD.md` reflecting what changed. See [`CLAUDE.md`](./CLAUDE.md) for the full convention.
+
 ---
 
 ## Status legend
@@ -276,6 +278,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
+| (this commit) | Add `CLAUDE.md` with docs-update-before-commit rule; bring `context.md` up to date with everything since v0; cross-link the master docs |
+| `847a504` | Add `PRD.md` — master status index |
 | `b4f081d` | P0 UX shell upgrade — sidebar, topbar, cmd+K, /today, StatusPill |
 | `8fbf753` | Six UX quick wins |
 | `c6b0c23` | Add `UX_PLAN.md` |
@@ -285,3 +289,16 @@ Current todo state at top of stack:
 | `9a179be` | Bug fixes — PDF viewer + Critical Dates banner + composite renderer |
 | `d48e6aa` | Add `context.md` |
 | (initial) | LeaseOS scaffold — extraction CLI, FastAPI backend, Next.js frontend |
+
+---
+
+## 11. The docs-update-before-commit rule (project convention)
+
+This repo uses a strict convention that every code commit also updates `context.md` and `PRD.md`. The full rule and workflow are in [`CLAUDE.md`](./CLAUDE.md). Summary:
+
+1. Before `git commit`, update `context.md` (Last-updated date, code structure, capability list, gaps).
+2. Before `git commit`, update `PRD.md` (status icons, recent commits table).
+3. Stage the doc updates with the same `git add`; include in the same commit.
+4. Commit message should mention "(updates context.md + PRD.md)".
+
+Exceptions: WIP commits on non-`main` branches; doc-only commits; external-tool commits.

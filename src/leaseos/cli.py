@@ -15,7 +15,7 @@ from rich.table import Table
 from .extract import extract, pick_model
 from .pdf import load_pdf
 
-load_dotenv()
+load_dotenv(override=True)
 console = Console()
 
 

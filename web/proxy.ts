@@ -28,7 +28,9 @@ export default function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Exclude _next internals and common static asset extensions (note: .mjs
+    // added so self-hosted ESM workers like pdf.worker.min.mjs aren't gated).
+    "/((?!_next|[^?]*\\.(?:html?|css|m?js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest|wasm|map)).*)",
     "/(api|trpc)(.*)",
   ],
 };

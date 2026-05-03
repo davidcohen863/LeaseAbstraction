@@ -7,12 +7,22 @@ and for not creating duplicates on re-extraction.
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Iterable
 
 from ..schema import LeaseRecord
 from .models import EventType
+
+
+def _subtract_months(d: datetime, months: int) -> datetime:
+    """Subtract whole months without 30.5-day approximation. Clamps to last day."""
+    total = d.year * 12 + (d.month - 1) - months
+    year, month = divmod(total, 12)
+    month += 1
+    last_day = calendar.monthrange(year, month)[1]
+    return d.replace(year=year, month=month, day=min(d.day, last_day))
 
 
 @dataclass
@@ -56,11 +66,11 @@ def derive_events(record: LeaseRecord) -> list[DerivedEvent]:
                 description=f"Review basis: {rr.basis.value if rr.basis else 'unknown'}.",
             )
         )
-        # Trigger pack 6 months ahead
+        # Trigger pack 6 months ahead (proper month math)
         out.append(
             DerivedEvent(
                 event_type=EventType.RENT_REVIEW_TRIGGER,
-                event_date=rd_dt - timedelta(days=183),
+                event_date=_subtract_months(rd_dt, 6),
                 title=f"Prepare rent review pack — {label}",
                 description="Pack auto-generation fires from this date.",
             )
@@ -81,7 +91,7 @@ def derive_events(record: LeaseRecord) -> list[DerivedEvent]:
             )
         )
         if brk_field.notice_months:
-            deadline = bd_dt - timedelta(days=int(brk_field.notice_months * 30.5))
+            deadline = _subtract_months(bd_dt, int(brk_field.notice_months))
             out.append(
                 DerivedEvent(
                     event_type=EventType.BREAK_NOTICE_DEADLINE,

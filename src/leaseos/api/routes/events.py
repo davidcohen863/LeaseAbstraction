@@ -33,22 +33,22 @@ class EventOut(BaseModel):
 def list_events(
     days_ahead: int = 365,
     days_behind: int = 30,
+    lease_id: str | None = None,
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[EventOut]:
     now = datetime.utcnow()
     start = now - timedelta(days=days_behind)
     end = now + timedelta(days=days_ahead)
-    rows = (
-        db.execute(
-            select(LeaseEvent, Lease.label)
-            .join(Lease, Lease.id == LeaseEvent.lease_id)
-            .where(LeaseEvent.event_date >= start)
-            .where(LeaseEvent.event_date <= end)
-            .order_by(LeaseEvent.event_date.asc())
-        )
-        .all()
+    stmt = (
+        select(LeaseEvent, Lease.label)
+        .join(Lease, Lease.id == LeaseEvent.lease_id)
+        .where(LeaseEvent.event_date >= start)
+        .where(LeaseEvent.event_date <= end)
     )
+    if lease_id:
+        stmt = stmt.where(LeaseEvent.lease_id == lease_id)
+    rows = db.execute(stmt.order_by(LeaseEvent.event_date.asc())).all()
     return [
         EventOut(
             id=event.id,

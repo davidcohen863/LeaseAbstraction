@@ -8,7 +8,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# override=True so the project's .env wins over stale empty/exported shell vars
+# (e.g. an empty `ANTHROPIC_API_KEY=""` in the user's ~/.zshrc).
+load_dotenv(override=True)
 
 
 class Settings:

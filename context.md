@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after the P1 Leases-list redesign + .gitignore fix)
+- Last updated: 2026-05-03 (after the P1 Lease-detail polish)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -312,7 +312,11 @@ leaseos/
       leases/page.tsx        # P1 — list with filter rail (status, critical-only),
                              #   sortable columns, group-by (status/property/client),
                              #   bulk-select + CSV export, search across label/property/client
-      leases/[id]/           # Reviewer split-screen (PdfViewer + FieldsPanel)
+      leases/[id]/           # Reviewer 3-col layout — PDF viewer + FieldsPanel + RightRail
+        page.tsx             #   page shell + breadcrumbs
+        PdfViewer.tsx        #   P1 — toolbar (zoom, fit, page jump) + scroll-driven page tracking
+        FieldsPanel.tsx      #   P1 — collapsible field sections, persisted via localStorage
+        RightRail.tsx        #   P1 — Approve, Critical Dates, Quick Links, Packs-for-this-lease, Document meta
       calendar/page.tsx      # All events grouped by year, with soon/overdue states
       comparables/page.tsx   # Market evidence table + add form
       packs/page.tsx         # Rent-review packs list
@@ -376,7 +380,13 @@ leaseos/
 - Settled cards show settled rent + uplift % in green
 - Polls every 4s while any pack is in `generating` state
 
-**Leases list redesign** (P1, just shipped)
+**Lease detail / Reviewer redesign** (P1, just shipped)
+- **3-column layout** — PDF (1fr) | Fields (1fr) | RightRail (280px)
+- **PDF viewer toolbar** — zoom −/+, fit-to-width toggle, page-number input + prev/next, scroll-driven current-page tracking via IntersectionObserver
+- **Fields panel** — 8 collapsible sections (Premises, Parties, Term & rent, Rent review, Break clauses, Use & occupation, Service charge, Compliance dates), each shows a low-confidence flag count; collapse state persists per-section in localStorage; citations are now bordered blue pills `p.X · cl. Y`
+- **Right rail** — sticky panel with: lease status pill + Approve button (always visible), Critical Dates block (with Generate-pack on review-trigger items), Related quick links (Property, Calendar, Original PDF download), Review packs for this lease, Document meta
+
+**Leases list redesign** (P1)
 - **Filter rail (left)**: multi-checkbox status filter + "Critical event ≤ 90d" toggle + group-by selector
 - **Sortable columns**: click any header to sort by Label / Property / Client / Status / Uploaded
 - **Group-by** dropdown — None / Status / Property / Client (sticky section headings)

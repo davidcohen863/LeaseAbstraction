@@ -6,7 +6,7 @@
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Pilot customer: **Claridges Commercial**
 - Vision: vertical SaaS for UK commercial property agencies — start with lease abstraction, expand to dilapidations / inspections / acquisitions sourcing
-- Current state: **Local pilot fully working. Pre-deploy. P0 shell + P1 Properties + P1 Calendar grid + P1 Reviews kanban + P1 Leases-list redesign shipped.**
+- Current state: **Local pilot fully working. Pre-deploy. P0 shell + P1 Properties + Calendar grid + Reviews kanban + Leases-list redesign + Lease-detail polish shipped (5 of 7 P1 items done).**
 
 > **Rule for AI agents in this repo:** every code commit must include updates to `context.md` and `PRD.md` reflecting what changed. See [`CLAUDE.md`](./CLAUDE.md) for the full convention.
 
@@ -163,8 +163,9 @@ Commit: `8fbf753`.
 | Leases list — Property column | ✅ | `web/app/leases/page.tsx` |
 | Properties in cmd-K palette | ✅ | `web/components/ui/command-palette.tsx` |
 | Leases list redesign — filter rail (status, client, sector), sort, group-by, bulk actions | ✅ | Filter rail (status + critical-only) + sortable cols + group-by + bulk-select + CSV export + Property/Client/Critical columns |
-| Lease detail redesign — sticky right-rail action panel, collapsible field sections, inline edit on composites | 📋 | |
-| PDF viewer controls (zoom, fit-to-width, page-jump, search-in-PDF) | 📋 | react-pdf supports it |
+| Lease detail redesign — sticky right-rail action panel, collapsible field sections | ✅ | 3-column layout (PDF / Fields / RightRail), 8 collapsible sections with localStorage-persisted state, RightRail with status + Approve + Critical Dates + Quick Links + Packs |
+| PDF viewer controls (zoom, fit-to-width, page-jump) | ✅ | Toolbar with zoom −/+ / fit-to-width / page jump + scroll-driven page tracking |
+| PDF viewer search-in-PDF + bbox highlight on citation click | 📋 | Defer — citations don't have bbox data yet |
 | Calendar **month grid** view (vs current vertical list) | ✅ | Built atop date-fns; Month/List view toggle; UK-week (Mon start); Today button |
 | Calendar filters + side-drawer-on-click | ✅ | Type-filter chips + side drawer with Generate-pack action |
 | `/reviews` **kanban board** (Pack pending → Draft → Sent → Settled) | ✅ | Action-button advance for v1 (drag-to-advance deferred); per-card uplift % on settled |
@@ -256,7 +257,7 @@ Current todo state at top of stack:
 2. ✅ **Calendar month grid** + drawer + filters
 3. ✅ **`/reviews` kanban board**
 4. ✅ **Leases list redesign** — filter rail + sort + group-by + bulk + CSV
-5. 📋 Lease detail collapsible sections + sticky right-rail (P1)
+5. ✅ **Lease detail polish** — 3-col layout + RightRail + collapsible sections + PDF controls
 6. 📋 Comparables map + similarity scoring (P1)
 7. 📋 Pack detail Word-style preview (P1)
 
@@ -281,7 +282,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | **Fix .gitignore bug** — `leases/` was matching `web/app/leases/`, so the lease UI files (page, [id], FieldsPanel, PdfViewer) had never been pushed. Anchored `/leases/`, `/data/`, `/output/`. Lease UI files now properly committed |
+| (this commit) | P1 Lease-detail polish — 3-column layout (PDF / Fields / RightRail 280px), 8 collapsible field sections persisted to localStorage, citation pills (blue-bordered), PDF viewer toolbar with zoom + fit + page jump + scroll-driven current-page tracking, RightRail with Status + Approve + Critical Dates + Related quick links + Packs-for-this-lease + Document meta |
+| `f686136` | **Fix .gitignore bug** — `leases/` was matching `web/app/leases/`, so the lease UI files (page, [id], FieldsPanel, PdfViewer) had never been pushed. Anchored `/leases/`, `/data/`, `/output/`. Lease UI files now properly committed |
 | `e6f71ce` | P1 Leases-list redesign — left filter rail (status multi + critical-only), sortable columns, group-by (status / property / client), bulk-select + CSV export, Property + Client + Critical columns, search across label / property / client |
 | `11382f3` | P1 Reviews kanban — `/reviews` 4-column board (Pack pending → Draft → Sent → Settled), per-card actions (Generate / Mark sent), settled uplift %, polling for in-flight packs |
 | `dd1cd2d` | P1 Calendar — month grid view (date-fns, no library), event drawer with Generate-pack action, Month/List toggle, type-filter chips, Today button + month nav |

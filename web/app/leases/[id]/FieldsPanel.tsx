@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { differenceInDays, format, parseISO } from "date-fns";
-import { api, type LeaseEvent } from "@/lib/api";
+import { ChevronDown } from "lucide-react";
+import { api } from "@/lib/api";
 import { humaniseCompositeValue, humaniseKey } from "@/lib/humanise";
 
 interface Citation {
@@ -28,8 +27,6 @@ interface Props {
   leaseId: string;
   record: Record<string, unknown>;
   onJumpToPage: (page: number) => void;
-  onApprove: () => Promise<void>;
-  approved: boolean;
 }
 
 const TOP_LEVEL_LABELS: Record<string, string> = {
@@ -55,19 +52,36 @@ const TOP_LEVEL_LABELS: Record<string, string> = {
   epc_expiry_date: "EPC expiry",
 };
 
-const META_KEYS = new Set(["citation", "confidence", "notes"]);
+// Section grouping — order matters; renders top-to-bottom.
+const SECTIONS: { id: string; title: string; fields: string[] }[] = [
+  { id: "premises", title: "Premises", fields: ["premises_address", "premises_extent"] },
+  { id: "parties",  title: "Parties",  fields: ["landlord", "tenant", "guarantor"] },
+  {
+    id: "term-rent",
+    title: "Term & rent",
+    fields: ["term_start", "term_length_years", "term_expiry", "initial_rent_gbp", "rent_frequency", "rent_deposit_gbp"],
+  },
+  { id: "review", title: "Rent review", fields: ["rent_review"] },
+  { id: "breaks", title: "Break clauses", fields: ["tenant_break", "landlord_break"] },
+  { id: "use-occupation", title: "Use & occupation", fields: ["permitted_use", "repair", "alienation"] },
+  { id: "service-charge", title: "Service charge", fields: ["service_charge"] },
+  { id: "compliance", title: "Compliance dates", fields: ["insurance_renewal_date", "epc_expiry_date"] },
+];
 
-function flatten(record: Record<string, unknown>): FieldNode[] {
-  const out: FieldNode[] = [];
+const META_KEYS = new Set(["citation", "confidence", "notes"]);
+const COLLAPSE_STORAGE_KEY = "leaseos.fieldsPanel.collapsed";
+
+// ---- pure helpers -------------------------------------------------------
+
+function flatten(record: Record<string, unknown>): Map<string, FieldNode> {
+  const out = new Map<string, FieldNode>();
   for (const [key, label] of Object.entries(TOP_LEVEL_LABELS)) {
     const v = record[key] as Record<string, unknown> | null | undefined;
     if (v == null || typeof v !== "object") continue;
-
     const isLeaf = "value" in v && !hasCompositeKeys(v);
     const isParty = "name" in v && !("value" in v);
-
     if (isLeaf || isParty) {
-      out.push({
+      out.set(key, {
         path: key,
         label,
         value: pickPrimaryValueAsString(v),
@@ -77,7 +91,7 @@ function flatten(record: Record<string, unknown>): FieldNode[] {
         notes: (v.notes as string | null) ?? null,
       });
     } else {
-      out.push({
+      out.set(key, {
         path: key,
         label,
         value: null,
@@ -123,132 +137,41 @@ function compositeItems(parentPath: string, c: Record<string, unknown>): string[
   return items;
 }
 
-// ---- Critical dates banner ---------------------------------------------
+// ---- main panel ---------------------------------------------------------
 
-const CRITICAL_TYPES = new Set([
-  "break_notice_deadline",
-  "rent_review_trigger",
-  "lease_expiry",
-]);
-
-function CriticalDatesBanner({
-  leaseId,
-}: {
-  leaseId: string;
-  onJumpToPage: (page: number) => void;
-}) {
-  const router = useRouter();
-  const [events, setEvents] = useState<LeaseEvent[] | null>(null);
-  const [generating, setGenerating] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .listEvents({ days_ahead: 730, days_behind: 0 })
-      .then((all) => setEvents(all.filter((e) => e.lease_id === leaseId)))
-      .catch(() => setEvents([]));
-  }, [leaseId]);
-
-  if (!events) return null;
-  const critical = events
-    .filter((e) => CRITICAL_TYPES.has(e.event_type))
-    .sort((a, b) => a.event_date.localeCompare(b.event_date));
-
-  if (critical.length === 0) return null;
-
-  async function generatePack(eventId: string) {
-    setGenerating(eventId);
-    try {
-      const pack = await api.generatePackForEvent(eventId);
-      router.push(`/packs/${pack.id}`);
-    } catch (e) {
-      alert(`Failed to generate pack: ${e}`);
-      setGenerating(null);
-    }
-  }
-
-  return (
-    <div className="border-b border-neutral-200 bg-amber-50 px-5 py-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-amber-900 mb-2">
-        Critical dates
-      </div>
-      <ul className="space-y-1.5">
-        {critical.map((e) => {
-          const dt = parseISO(e.event_date);
-          const days = differenceInDays(dt, new Date());
-          const urgent = days <= 90 && days >= 0;
-          const overdue = days < 0;
-          const label =
-            e.event_type === "break_notice_deadline"
-              ? "Break notice deadline"
-              : e.event_type === "rent_review_trigger"
-              ? "Prepare rent review pack"
-              : "Lease expiry";
-          const isReview = e.event_type === "rent_review_trigger";
-          return (
-            <li
-              key={e.id}
-              className="flex items-center justify-between gap-3 text-sm"
-            >
-              <span
-                className={`font-medium ${
-                  overdue
-                    ? "text-red-700"
-                    : urgent
-                    ? "text-amber-900"
-                    : "text-neutral-800"
-                }`}
-              >
-                {label}
-              </span>
-              <div className="flex items-center gap-3">
-                {isReview && (
-                  <button
-                    onClick={() => generatePack(e.id)}
-                    disabled={generating === e.id}
-                    className="rounded bg-blue-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {generating === e.id ? "Generating…" : "Generate pack"}
-                  </button>
-                )}
-                <span className="text-neutral-700">
-                  {format(dt, "d MMM yyyy")}
-                  <span className="ml-2 text-xs text-neutral-500">
-                    {overdue
-                      ? `${Math.abs(days)}d ago`
-                      : days === 0
-                      ? "today"
-                      : `in ${days}d`}
-                  </span>
-                </span>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-// ---- Main panel ---------------------------------------------------------
-
-export default function FieldsPanel({
-  leaseId,
-  record,
-  onJumpToPage,
-  onApprove,
-  approved,
-}: Props) {
+export default function FieldsPanel({ leaseId, record, onJumpToPage }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draftValue, setDraftValue] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [localRecord, setLocalRecord] = useState(record);
-  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const fields = flatten(localRecord);
-  const lowConfidenceCount = fields.filter((f) => f.confidence === "low").length;
+  // Persist collapse state per section
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(COLLAPSE_STORAGE_KEY);
+      if (v) setCollapsed(new Set(JSON.parse(v)));
+    } catch {}
+  }, []);
+
+  function toggleSection(id: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        window.localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+  }
+
+  const fieldMap = flatten(localRecord);
+  const totalFields = fieldMap.size;
+  const lowConfidenceCount = Array.from(fieldMap.values()).filter((f) => f.confidence === "low").length;
 
   function startEdit(node: FieldNode) {
-    if (node.items) return; // composites not editable in v1
+    if (node.items) return; // composites not editable inline in v1
     setEditing(node.path);
     setDraftValue(node.value ?? "");
   }
@@ -272,130 +195,166 @@ export default function FieldsPanel({
 
   return (
     <div className="h-full overflow-auto bg-white">
-      <div className="sticky top-0 z-10 border-b border-neutral-200 bg-white px-5 py-3 flex items-center justify-between">
-        <div className="text-sm">
-          <span className="font-medium">{fields.length}</span> fields
-          {lowConfidenceCount > 0 && (
-            <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-              {lowConfidenceCount} flagged
-            </span>
-          )}
-        </div>
-        <button
-          disabled={approved || approvalBusy}
-          onClick={async () => {
-            setApprovalBusy(true);
-            try {
-              await onApprove();
-            } finally {
-              setApprovalBusy(false);
-            }
-          }}
-          className={`text-sm rounded-md px-3 py-1.5 font-medium ${
-            approved
-              ? "bg-emerald-100 text-emerald-800"
-              : approvalBusy
-              ? "bg-neutral-200 text-neutral-500"
-              : "bg-emerald-600 text-white hover:bg-emerald-700"
-          }`}
-        >
-          {approved ? "Approved" : approvalBusy ? "Approving…" : "Approve lease"}
-        </button>
+      {/* Sticky header — slimmer; Approve moved to right rail */}
+      <div className="sticky top-0 z-10 border-b border-neutral-200 bg-white px-5 py-2.5 text-sm">
+        <span className="font-medium tabular-nums">{totalFields}</span>
+        <span className="text-neutral-500"> fields</span>
+        {lowConfidenceCount > 0 && (
+          <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+            {lowConfidenceCount} flagged
+          </span>
+        )}
       </div>
 
-      <CriticalDatesBanner leaseId={leaseId} onJumpToPage={onJumpToPage} />
+      {/* Sections */}
+      <div className="divide-y divide-neutral-100">
+        {SECTIONS.map((section) => {
+          const fields = section.fields
+            .map((p) => fieldMap.get(p))
+            .filter((f): f is FieldNode => f !== undefined);
+          if (fields.length === 0) return null;
 
-      <ul className="divide-y divide-neutral-100">
-        {fields.map((f) => {
-          const isEditing = editing === f.path;
+          const sectionLow = fields.filter((f) => f.confidence === "low").length;
+          const isCollapsed = collapsed.has(section.id);
+
           return (
-            <li key={f.path} className="px-5 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs uppercase tracking-wide text-neutral-500">
-                      {f.label}
-                    </span>
-                    {f.confidence === "low" && (
-                      <span className="text-xs text-amber-700">⚠ flagged</span>
-                    )}
-                  </div>
-
-                  {isEditing ? (
-                    <div className="mt-1 flex gap-2">
-                      <input
-                        autoFocus
-                        value={draftValue}
-                        onChange={(e) => setDraftValue(e.target.value)}
-                        className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
-                      />
-                      <button
-                        disabled={saving}
-                        onClick={() => save(f)}
-                        className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-700 disabled:opacity-50"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditing(null)}
-                        className="rounded border border-neutral-300 px-3 py-1 text-xs"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : f.items ? (
-                    <ul className="mt-1 space-y-0.5 text-sm text-neutral-900">
-                      {f.items.map((item) => {
-                        const [k, ...rest] = item.split(":");
-                        const v = rest.join(":").trim();
-                        return (
-                          <li key={item} className="flex gap-2">
-                            <span className="text-neutral-500 min-w-[8.5rem]">
-                              {k}
-                            </span>
-                            <span className="font-medium">{v}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <div
-                      className="mt-1 text-sm text-neutral-900"
-                      onDoubleClick={() => startEdit(f)}
-                      title="Double-click to edit"
-                    >
-                      {f.value == null || f.value === "" ? (
-                        <span className="text-neutral-400 italic">— null —</span>
-                      ) : (
-                        f.value
-                      )}
-                    </div>
-                  )}
-
-                  {f.notes && (
-                    <div className="mt-1.5 text-xs text-neutral-500">{f.notes}</div>
-                  )}
+            <section key={section.id}>
+              <button
+                onClick={() => toggleSection(section.id)}
+                aria-expanded={!isCollapsed}
+                className="flex w-full items-center justify-between gap-2 px-5 py-2.5 text-left hover:bg-neutral-50"
+              >
+                <div className="flex items-center gap-2">
+                  <ChevronDown
+                    size={14}
+                    className={`text-neutral-500 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                  />
+                  <span className="text-sm font-semibold text-neutral-900">{section.title}</span>
+                  <span className="text-xs text-neutral-400 tabular-nums">{fields.length}</span>
                 </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  {f.citation && (
-                    <button
-                      onClick={() => f.citation && onJumpToPage(f.citation.page)}
-                      className="text-xs text-blue-700 hover:underline"
-                    >
-                      p.{f.citation.page} {f.citation.clause_reference ?? ""}
-                    </button>
-                  )}
-                </div>
-              </div>
-              {f.citation?.quote && (
-                <blockquote className="mt-2 border-l-2 border-neutral-200 pl-3 text-xs text-neutral-500 italic">
-                  &ldquo;{f.citation.quote}&rdquo;
-                </blockquote>
+                {sectionLow > 0 && (
+                  <span className="text-xs font-medium text-amber-700">⚠ {sectionLow}</span>
+                )}
+              </button>
+
+              {!isCollapsed && (
+                <ul className="divide-y divide-neutral-100 bg-neutral-50/40">
+                  {fields.map((f) => (
+                    <FieldRow
+                      key={f.path}
+                      f={f}
+                      editing={editing === f.path}
+                      draftValue={draftValue}
+                      saving={saving}
+                      setDraftValue={setDraftValue}
+                      onStartEdit={() => startEdit(f)}
+                      onSave={() => save(f)}
+                      onCancel={() => setEditing(null)}
+                      onJump={(p) => onJumpToPage(p)}
+                    />
+                  ))}
+                </ul>
               )}
-            </li>
+            </section>
           );
         })}
-      </ul>
+      </div>
     </div>
+  );
+}
+
+// ---- field row ----------------------------------------------------------
+
+interface RowProps {
+  f: FieldNode;
+  editing: boolean;
+  draftValue: string;
+  saving: boolean;
+  setDraftValue: (s: string) => void;
+  onStartEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onJump: (page: number) => void;
+}
+
+function FieldRow({ f, editing, draftValue, saving, setDraftValue, onStartEdit, onSave, onCancel, onJump }: RowProps) {
+  return (
+    <li className="px-5 py-3 bg-white">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-neutral-500">{f.label}</span>
+            {f.confidence === "low" && (
+              <span className="text-xs text-amber-700">⚠ flagged</span>
+            )}
+          </div>
+
+          {editing ? (
+            <div className="mt-1 flex gap-2">
+              <input
+                autoFocus
+                value={draftValue}
+                onChange={(e) => setDraftValue(e.target.value)}
+                className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
+              />
+              <button
+                disabled={saving}
+                onClick={onSave}
+                className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-700 disabled:opacity-50"
+              >
+                Save
+              </button>
+              <button onClick={onCancel} className="rounded border border-neutral-300 px-3 py-1 text-xs">
+                Cancel
+              </button>
+            </div>
+          ) : f.items ? (
+            <ul className="mt-1 space-y-0.5 text-sm text-neutral-900">
+              {f.items.map((item) => {
+                const [k, ...rest] = item.split(":");
+                const v = rest.join(":").trim();
+                return (
+                  <li key={item} className="flex gap-2">
+                    <span className="text-neutral-500 min-w-[8.5rem]">{k}</span>
+                    <span className="font-medium">{v}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div
+              className="mt-1 text-sm text-neutral-900"
+              onDoubleClick={onStartEdit}
+              title="Double-click to edit"
+            >
+              {f.value == null || f.value === "" ? (
+                <span className="text-neutral-400 italic">— null —</span>
+              ) : (
+                f.value
+              )}
+            </div>
+          )}
+
+          {f.notes && (
+            <div className="mt-1.5 text-xs text-neutral-500">{f.notes}</div>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {f.citation && (
+            <button
+              onClick={() => f.citation && onJump(f.citation.page)}
+              className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800 hover:bg-blue-100"
+            >
+              p.{f.citation.page} {f.citation.clause_reference ? `· ${f.citation.clause_reference}` : ""}
+            </button>
+          )}
+        </div>
+      </div>
+      {f.citation?.quote && (
+        <blockquote className="mt-2 border-l-2 border-neutral-200 pl-3 text-xs text-neutral-500 italic">
+          &ldquo;{f.citation.quote}&rdquo;
+        </blockquote>
+      )}
+    </li>
   );
 }

@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { api, type LeaseDetail } from "@/lib/api";
 import FieldsPanel from "./FieldsPanel";
+import { RightRail } from "./RightRail";
 
 // react-pdf must be client-only — disable SSR via dynamic import.
 const PdfViewer = dynamic(() => import("./PdfViewer"), { ssr: false });
@@ -110,20 +111,24 @@ export default function LeaseDetailPage({ params }: { params: Promise<{ id: stri
           No record available.
         </div>
       ) : (
-        <div className="grid flex-1 grid-cols-1 lg:grid-cols-2 overflow-hidden">
+        <div className="grid flex-1 grid-cols-1 lg:grid-cols-[1fr_1fr_280px] overflow-hidden">
           <div className="border-r border-neutral-200 overflow-hidden">
             <PdfViewer url={api.documentUrl(id)} scrollToPage={scrollPage} />
           </div>
-          <div className="overflow-hidden">
+          <div className="overflow-hidden border-r border-neutral-200">
             <FieldsPanel
               leaseId={id}
               record={lease.record_json}
               onJumpToPage={(p) => setScrollPage(p)}
+            />
+          </div>
+          <div className="overflow-hidden">
+            <RightRail
+              lease={lease}
               onApprove={async () => {
                 await api.approve(id);
                 await load();
               }}
-              approved={lease.status === "approved"}
             />
           </div>
         </div>

@@ -1,0 +1,60 @@
+# Render IaaC — provisions the API web service + Postgres + a daily Slack
+# digest cron with one click via Render's "Blueprint" mechanism.
+# Push this repo to GitHub, then in Render: New → Blueprint → connect repo.
+
+databases:
+  - name: leaseos-db
+    plan: starter           # Postgres 16 — upgrade as the corpus grows
+    region: frankfurt       # closest EU region; change if UK/US preferred
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: leaseos-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: leaseos-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false                # set in Render dashboard
+      - key: LEASEOS_AUTH_REQUIRED
+        value: "true"
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: LEASEOS_CORS_ORIGINS
+        sync: false                # set to your Vercel URL after deploy
+      - key: SLACK_DEFAULT_WEBHOOK_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: MS_CLIENT_ID
+        sync: false
+      - key: MS_CLIENT_SECRET
+        sync: false
+      - key: MS_REDIRECT_URI
+        sync: false
+      - key: MS_TENANT_ID
+        value: common
+
+  - type: cron
+    name: leaseos-slack-digest
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    schedule: "0 7 * * *"          # 07:00 UTC daily
+    dockerCommand: "curl -fsS -X POST $LEASEOS_API_URL/integrations/slack/digest/run"
+    envVars:
+      - key: LEASEOS_API_URL
+        sync: false                # set to https://leaseos-api.onrender.com once deployed

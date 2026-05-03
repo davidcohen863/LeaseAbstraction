@@ -1,0 +1,24 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Secrets & local data
+.env
+.env.local
+.DS_Store
+data/
+leases/
+output/
+
+# Node / Next.js (web/)
+web/node_modules/
+web/.next/
+web/.env*.local
+web/.vercel/
+web/next-env.d.ts
+web/.turbo/
+

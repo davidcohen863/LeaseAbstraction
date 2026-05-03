@@ -1,0 +1,36 @@
+# Example ground-truth file. Drop a PDF named `olive_and_vine.pdf` into
+# `leases/` to score against this. Each key is a dotted path into the
+# extracted LeaseRecord; values are what the model should return.
+#
+# Start small — only score the fields you can hand-verify. Grow over time.
+
+premises_address: "14 Crouch End Broadway, London N8"
+landlord.name: "Patel Holdings Ltd"
+tenant.name: "Olive & Vine Ltd"
+tenant.company_number: "13442000"
+guarantor.name: "Anna Marini"
+
+term_start: "2022-05-01"
+term_length_years: 10
+term_expiry: "2032-04-30"
+
+initial_rent_gbp: 42500.0
+rent_frequency: "quarterly"
+
+rent_review.basis: "open_market"
+rent_review.upward_only: true
+rent_review.cycle_years: 5
+
+tenant_break.party: "tenant"
+tenant_break.break_date: "2027-04-30"
+tenant_break.notice_months: 6
+
+repair.basis: "fri"
+
+permitted_use: "Use Class E(b) — restaurant/café"
+
+alienation.assignment_with_consent: true
+alienation.aga_required: true
+
+service_charge.rpi_linked: true
+service_charge.cap_pct: 5.0

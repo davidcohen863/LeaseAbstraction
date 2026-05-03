@@ -1,0 +1,66 @@
+"""Background extraction job. For v0 this runs on FastAPI's BackgroundTasks
+in-process. When concurrency or reliability matters, swap for RQ or Celery
+without changing the function signature.
+"""
+
+from __future__ import annotations
+
+import logging
+import traceback
+from pathlib import Path
+
+from sqlalchemy.orm import Session
+
+from ..extract import extract
+from ..pdf import load_pdf
+from .db import SessionLocal
+from .events import derive_events
+from .models import Lease, LeaseEvent, LeaseStatus
+
+log = logging.getLogger(__name__)
+
+
+def run_extraction(lease_id: str, pdf_path: str) -> None:
+    """Extract a lease, persist the record, derive events. Called as a background task."""
+    db: Session = SessionLocal()
+    try:
+        lease = db.get(Lease, lease_id)
+        if lease is None:
+            log.warning("Extraction requested for unknown lease %s", lease_id)
+            return
+
+        lease.status = LeaseStatus.EXTRACTING.value
+        db.commit()
+
+        try:
+            pdf = load_pdf(Path(pdf_path))
+            result = extract(pdf)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Extraction failed for lease %s", lease_id)
+            lease.status = LeaseStatus.FAILED.value
+            lease.extraction_error = f"{exc}\n\n{traceback.format_exc()[-2000:]}"
+            db.commit()
+            return
+
+        lease.record_json = result.record.model_dump(mode="json")
+        lease.extraction_model = result.model
+        lease.extraction_seconds = result.elapsed_seconds
+        lease.status = LeaseStatus.READY_FOR_REVIEW.value
+        if result.record.premises_address.value:
+            lease.label = result.record.premises_address.value
+
+        # Replace any previously-derived events
+        db.query(LeaseEvent).filter(LeaseEvent.lease_id == lease_id).delete()
+        for ev in derive_events(result.record):
+            db.add(
+                LeaseEvent(
+                    lease_id=lease_id,
+                    event_type=ev.event_type.value,
+                    event_date=ev.event_date,
+                    title=ev.title,
+                    description=ev.description,
+                )
+            )
+        db.commit()
+    finally:
+        db.close()

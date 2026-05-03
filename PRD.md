@@ -238,13 +238,17 @@ When ready to ship: see [`DEPLOY.md`](./DEPLOY.md).
 
 | Item | Status | Notes |
 |---|---|---|
-| pytest suite for backend | ✅ | 66 tests covering events math, recurring expansion, derive_events, two-pass merge, property dedup, route shape via TestClient, filename sanitisation regression. ~1.4s. |
+| pytest suite for backend | ✅ | 78 tests (was 66) — added Fernet round-trip, prod CORS assertion, sandbox file serving. ~1.4s. |
 | Playwright smoke test for frontend | 📋 | Critical-path: upload → review → approve → pack |
 | Eval harness with 50-lease ground-truth corpus | 📋 | Stub exists at `eval/` — needs real leases (NDA-blocked until Claridges shares) |
-| Move OAuth state from in-process dict → Redis or DB | 📋 | Multi-instance prep |
+| **OAuth state in DB (H3)** | ✅ | New `oauth_states` table + Alembic revision `9f3b21ec0a40`; `_new_state` / `_consume_state` now Postgres-backed; survives restart + works across multiple workers; rows GC after 15 min |
 | Move background extraction from FastAPI BackgroundTasks → RQ/Celery | 📋 | Concurrency prep |
 | Self-hosted pdf.js worker behind strict CSP | ✅ | Already self-hosted under `/public` |
-| Alembic migrations | ✅ | `alembic/` initialised, env.py reads DATABASE_URL from settings; baseline + dev-drift-cleanup revisions in place; Dockerfile runs `alembic upgrade head` before serving; `scripts/db.sh` wrapper for local use |
+| Alembic migrations | ✅ | `alembic/` initialised, env.py reads DATABASE_URL from settings; baseline + dev-drift-cleanup + oauth_states revisions; Dockerfile runs `alembic upgrade head` before serving; `scripts/db.sh` wrapper for local use |
+| **Prod CORS startup assertion (M4)** | ✅ | `_assert_safe_prod_config()` blocks boot when `LEASEOS_ENV=prod` if CORS origins are empty / `*` / localhost / plain-http |
+| **N+1 eager-loads (M2/M3)** | ✅ | `selectinload(Lease.property, Lease.documents)` on lease list/detail; `selectinload(Property.leases)` on properties list/detail |
+| **Pack-document sandbox (M8)** | ✅ | Shared `security.serve_inside_sandbox` now serves both `data/documents/` and `data/packs/`; pack download confirms parent pack exists + URL `pack_id` matches doc's `pack_id` |
+| **Encrypt Slack webhooks at rest (M7)** | ✅ | New `crypto.py` (Fernet, `enc:v1:` prefix); webhook URLs encrypted at write, decrypted at every send site; legacy plaintext rows pass through; `LEASEOS_SECRET_KEY` required in prod |
 
 ---
 
@@ -289,7 +293,8 @@ Current todo state at top of stack:
 
 | SHA | What |
 |---|---|
-| (this commit) | **Alembic migrations** — `alembic/` initialised with env.py that reads DATABASE_URL from settings + imports models for autogenerate; baseline migration captures all 11 tables; dev-drift-cleanup migration tightens the NOT NULL + server_default constraints that the early hand-applied ALTER TABLEs missed; Dockerfile CMD now runs `alembic upgrade head` before serving (idempotent); `scripts/db.sh` wrapper (upgrade / current / history / new / check); DEPLOY.md updated; tests still 66/66. |
+| (this commit) | **M-tier security hardening** — five fixes from `CODE_REVIEW.md` follow-up list landed together: (M4) prod CORS startup assertion in `main._assert_safe_prod_config()` blocks misconfigured boot when `LEASEOS_ENV=prod`; (M2/M3) `selectinload` on Lease + Property relationships kills N+1 on list endpoints; (M8) pack-document download routed through shared `security.serve_inside_sandbox` + ownership check on `pack_id` URL parameter; (M7) Slack webhook URLs encrypted at rest with Fernet (new `crypto.py`, `enc:v1:` wire prefix, `LEASEOS_SECRET_KEY` env var required in prod); (H3) OAuth CSRF state moved out of in-process `_STATES` dict into new `oauth_states` table (Alembic `9f3b21ec0a40`). New shared modules: `api/crypto.py`, `api/security.py`. 12 new tests (78/78 total). DEPLOY.md updated with `LEASEOS_SECRET_KEY` instructions. |
+| `77f1970` | **Alembic migrations** — `alembic/` initialised with env.py that reads DATABASE_URL from settings + imports models for autogenerate; baseline migration captures all 11 tables; dev-drift-cleanup migration tightens the NOT NULL + server_default constraints that the early hand-applied ALTER TABLEs missed; Dockerfile CMD now runs `alembic upgrade head` before serving (idempotent); `scripts/db.sh` wrapper (upgrade / current / history / new / check); DEPLOY.md updated; tests still 66/66. |
 | `2707922` | Fix /properties 500 error: defensive `updated_at` fallback in route + worker explicitly sets created_at/updated_at on new Property rows + backfill NULLs |
 | `d5e464f` | **Code review + first pytest suite + 2 HIGH security fixes** — `CODE_REVIEW.md` catalogues 3 HIGH / 10 MEDIUM / 10 LOW findings; HIGH H1 (filename traversal on upload) and H2 (path traversal on document download) fixed via new `_safe_filename()` and `_serve_inside_sandbox()` helpers in `routes/leases.py`; HIGH H3 (in-process OAuth state) deferred; **66 pytest tests** (`tests/`) covering events math, recurring expansion, derive_events, two-pass merge, property dedup, route shape, filename sanitisation regression — all passing in ~1.4s. |
 | `1e5303e` | **Side-letter / variation attachment + AI summary** — Document model gets `summary_markdown` / `summary_status` / `summary_seconds` / `summary_error` columns; `POST /leases/{id}/documents` accepts a PDF + role (side_letter / variation / licence_to_alter / licence_to_assign / rent_deposit_deed / schedule_of_condition / other); `run_ancillary_summary()` worker calls Claude with a new `SIDE_LETTER_SUMMARY_PROMPT` that produces a structured markdown summary (type / date / parties / in-force / personal / what-it-changes / risk-flags) with clause citations; right-rail "Side-letters & variations" panel with role select + Attach upload, expandable inline summary, download/delete; ~£0.02–0.05 per doc; `migrate_documents.py` for the schema change. |

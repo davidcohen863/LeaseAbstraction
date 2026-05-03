@@ -30,8 +30,48 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def _assert_safe_prod_config(settings) -> None:
+    """Fail fast on a misconfigured prod boot.
+
+    Catches the two foot-guns that have actually shipped before:
+      1. CORS wide open (`allow_origins=["*"]`) with `allow_credentials=True`
+         — browsers reject this combo, so requests silently fail.
+      2. CORS pointed at localhost in prod — works in dev, useless in prod.
+
+    Run only when `LEASEOS_ENV=prod` (or Render's `RENDER` env var is set) so
+    local development is never blocked.
+    """
+    if settings.environment != "prod":
+        return
+    origins = settings.cors_origins or []
+    if not origins:
+        raise RuntimeError(
+            "Prod boot refused: LEASEOS_CORS_ORIGINS is empty. Set it to the "
+            "frontend's full https URL."
+        )
+    if "*" in origins:
+        raise RuntimeError(
+            "Prod boot refused: LEASEOS_CORS_ORIGINS contains '*'. "
+            "Wildcard CORS is incompatible with allow_credentials=True; "
+            "set explicit https origins."
+        )
+    bad = [o for o in origins if "localhost" in o or "127.0.0.1" in o]
+    if bad:
+        raise RuntimeError(
+            f"Prod boot refused: LEASEOS_CORS_ORIGINS contains localhost/loopback "
+            f"entries {bad!r}. These have no effect in prod and signal a misconfig."
+        )
+    insecure = [o for o in origins if o.startswith("http://")]
+    if insecure:
+        raise RuntimeError(
+            f"Prod boot refused: LEASEOS_CORS_ORIGINS contains plain-http entries "
+            f"{insecure!r}. Production must be https-only."
+        )
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
+    _assert_safe_prod_config(settings)
     app = FastAPI(title="LeaseOS API", version="0.2.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,

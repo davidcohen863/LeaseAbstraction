@@ -14,6 +14,13 @@ load_dotenv(override=True)
 
 
 class Settings:
+    # Environment — "dev" | "prod". Render is auto-detected via the RENDER env
+    # var; otherwise read from LEASEOS_ENV (default "dev"). Used by the startup
+    # assertion in main.create_app() to block obviously-unsafe config in prod.
+    environment: str = (
+        "prod" if os.getenv("RENDER") else os.getenv("LEASEOS_ENV", "dev").lower()
+    )
+
     # Database — defaults to SQLite for local dev. Render injects DATABASE_URL.
     database_url: str = os.getenv(
         "DATABASE_URL",

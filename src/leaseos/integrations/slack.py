@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..api.config import get_settings
+from ..api.crypto import decrypt_secret
 from ..api.models import Lease, LeaseEvent, SlackIntegration
 
 log = logging.getLogger(__name__)
@@ -91,7 +92,8 @@ def send_daily_digest(db: Session, *, days_ahead: int = 90) -> int:
     plain_text = f"LeaseOS digest — {len(rows)} events in next {days_ahead}d"
     sent = 0
     for integ in integrations:
-        if post_to_webhook(integ.webhook_url, text=plain_text, blocks=blocks):
+        url = decrypt_secret(integ.webhook_url)
+        if url and post_to_webhook(url, text=plain_text, blocks=blocks):
             sent += 1
     return sent
 
@@ -107,7 +109,9 @@ def notify_lease_ready(db: Session, lease: Lease) -> None:
 
     text = f"🆕 Lease ready for review — *{lease.label}*"
     for integ in integrations:
-        post_to_webhook(integ.webhook_url, text=text)
+        url = decrypt_secret(integ.webhook_url)
+        if url:
+            post_to_webhook(url, text=text)
 
 
 def notify_pack_ready(db: Session, pack, lease_label: str, frontend_base: str | None = None) -> None:
@@ -153,4 +157,6 @@ def notify_pack_ready(db: Session, pack, lease_label: str, frontend_base: str | 
         })
 
     for integ in integrations:
-        post_to_webhook(integ.webhook_url, text=headline, blocks=blocks)
+        url = decrypt_secret(integ.webhook_url)
+        if url:
+            post_to_webhook(url, text=headline, blocks=blocks)

@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after Alembic migrations + dev-DB drift cleanup)
+- Last updated: 2026-05-03 (after M-tier security hardening: prod CORS assertion, N+1 eager-loads, pack-doc sandbox, encrypted Slack webhooks, DB-backed OAuth state)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -285,8 +285,12 @@ leaseos/
       config.py              # Env vars (with override=True dotenv)
       db.py                  # SQLAlchemy session
       models.py              # Lease, Document, LeaseEvent, FieldEdit, OAuthToken,
-                             #   Comparable, RentReviewPack, PackDocument, ...
+                             #   OAuthState, Comparable, RentReviewPack, PackDocument, ...
       auth.py                # Clerk JWT verification (no-auth dev fallback)
+      crypto.py              # Fernet encrypt/decrypt for secrets at rest
+                             #   (Slack webhooks today, more later)
+      security.py            # safe_filename + serve_inside_sandbox (shared
+                             #   filesystem-security helpers)
       events.py              # Derive LeaseEvent rows from a LeaseRecord
       worker.py              # Background extraction task
       pack_worker.py         # Background pack-generation task
@@ -351,7 +355,7 @@ leaseos/
     migrate_documents.py       # Add side-letter summary columns to documents table
   data/                      # Local SQLite DB + uploaded documents + generated packs (gitignored)
   alembic/                   # Migrations — env.py reads DATABASE_URL from settings;
-                             #   versions/ has baseline + dev-drift-cleanup
+                             #   versions/ has baseline + dev-drift-cleanup + oauth_states
   alembic.ini                # Alembic config (sqlalchemy.url overridden in env.py)
   scripts/db.sh              # Wrapper: scripts/db.sh upgrade / current / new "msg"
   Dockerfile                 # Production image — CMD runs `alembic upgrade head` first
@@ -614,10 +618,21 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 
 ### 9.4 Operational
 
-- OAuth state currently in-memory (a `dict` in `routes/integrations.py`) — fine for one server, won't survive restart or multi-instance. Move to Redis/DB before scaling.
+- ✅ **OAuth CSRF state** — moved out of the in-process `_STATES` dict into a Postgres-backed `oauth_states` table (Alembic revision `9f3b21ec0a40`). Survives restarts; works across multiple workers; rows GC after 15 min.
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
-- ✅ **Backend pytest suite** — 66 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation regression. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
-- ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+- ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
+- ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.1 Security hardening (M-tier — landed 2026-05-03)
+
+- ✅ **Prod CORS startup assertion** in `main._assert_safe_prod_config()` — when `LEASEOS_ENV=prod` (or `RENDER` is set), refuses to boot if CORS origins are empty / contain `*` / contain localhost / are plain http. Dev unaffected.
+- ✅ **N+1 eager-loads** — `selectinload(Lease.property, Lease.documents)` on `GET /leases` and `GET /leases/{id}`; `selectinload(Property.leases)` on `/properties`. Was about to bite at 50+ leases.
+- ✅ **Pack-document sandbox + ownership** — `download_document` now confirms the parent pack exists, the doc's `pack_id` matches the URL, and the on-disk path resolves under `data/packs/` (via shared `security.serve_inside_sandbox`). Same helper now serves both `data/documents/` and `data/packs/`.
+- ✅ **Slack webhook URLs encrypted at rest** with Fernet, prefix `enc:v1:`. Key from `LEASEOS_SECRET_KEY` env var; required in prod, derived dev fallback otherwise. Legacy plaintext rows still readable until naturally re-saved (`crypto.decrypt_secret` passes them through).
+- New module: `src/leaseos/api/crypto.py` (Fernet encrypt/decrypt with prefix marker)
+- New module: `src/leaseos/api/security.py` (shared `safe_filename` + `serve_inside_sandbox`; replaces the dup helpers in routes/leases.py)
+- New env var: `LEASEOS_SECRET_KEY` (required in prod) — see `DEPLOY.md` step 3.
+- New env var: `LEASEOS_ENV` (`dev` | `prod`) — auto-set to `prod` if Render's `RENDER` env var is present.
 
 ### 9.5 The bigger product roadmap
 

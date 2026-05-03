@@ -18,8 +18,9 @@ from ...integrations import microsoft as ms_integ
 from ...integrations import slack as slack_integ
 from ..auth import AuthenticatedUser, current_user
 from ..config import get_settings
+from ..crypto import decrypt_secret, encrypt_secret
 from ..db import get_db
-from ..models import LeaseEvent, OAuthToken, SlackIntegration
+from ..models import LeaseEvent, OAuthState, OAuthToken, SlackIntegration
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -72,15 +73,16 @@ def slack_configure(
     existing = db.execute(
         select(SlackIntegration).where(SlackIntegration.user_id == user.id)
     ).scalar_one_or_none()
+    encrypted_url = encrypt_secret(str(body.webhook_url))
     if existing:
-        existing.webhook_url = str(body.webhook_url)
+        existing.webhook_url = encrypted_url
         existing.channel_label = body.channel_label
         existing.digest_enabled = body.digest_enabled
     else:
         db.add(
             SlackIntegration(
                 user_id=user.id,
-                webhook_url=str(body.webhook_url),
+                webhook_url=encrypted_url,
                 channel_label=body.channel_label,
                 digest_enabled=body.digest_enabled,
             )
@@ -99,7 +101,10 @@ def slack_test(
     ).scalar_one_or_none()
     if row is None:
         raise HTTPException(404, "Slack not configured")
-    ok = slack_integ.post_to_webhook(row.webhook_url, text="✅ LeaseOS test message")
+    url = decrypt_secret(row.webhook_url)
+    if not url:
+        raise HTTPException(500, "Slack webhook URL is empty")
+    ok = slack_integ.post_to_webhook(url, text="✅ LeaseOS test message")
     return {"ok": ok}
 
 
@@ -129,26 +134,38 @@ def slack_setup_page() -> HTMLResponse:
 
 
 # ---- OAuth state helpers -------------------------------------------------
+#
+# These tokens are issued at /<provider>/start and consumed at /<provider>/callback
+# to defend the OAuth round-trip against CSRF. Persisted in Postgres so the
+# state survives an API restart and works across multiple uvicorn workers.
 
 
-_STATES: dict[str, dict] = {}
+_STATE_TTL = timedelta(minutes=15)
 
 
-def _new_state(user_id: str, provider: str) -> str:
+def _new_state(db: Session, user_id: str, provider: str) -> str:
     state = secrets.token_urlsafe(24)
-    _STATES[state] = {"user_id": user_id, "provider": provider, "ts": datetime.utcnow()}
-    # Garbage-collect old states
-    for s, meta in list(_STATES.items()):
-        if datetime.utcnow() - meta["ts"] > timedelta(minutes=15):
-            _STATES.pop(s, None)
+    db.add(OAuthState(state=state, user_id=user_id, provider=provider))
+    # Best-effort GC of expired rows. Tiny table, runs maybe a dozen times a day.
+    db.query(OAuthState).filter(
+        OAuthState.created_at < datetime.utcnow() - _STATE_TTL
+    ).delete(synchronize_session=False)
+    db.commit()
     return state
 
 
-def _consume_state(state: str, provider: str) -> str:
-    meta = _STATES.pop(state, None)
-    if meta is None or meta["provider"] != provider:
+def _consume_state(db: Session, state: str, provider: str) -> str:
+    row = db.get(OAuthState, state)
+    if row is None or row.provider != provider:
         raise HTTPException(400, "Invalid or expired OAuth state")
-    return meta["user_id"]
+    if datetime.utcnow() - row.created_at > _STATE_TTL:
+        db.delete(row)
+        db.commit()
+        raise HTTPException(400, "Invalid or expired OAuth state")
+    user_id = row.user_id
+    db.delete(row)  # single-use
+    db.commit()
+    return user_id
 
 
 # ---- Google --------------------------------------------------------------
@@ -157,8 +174,9 @@ def _consume_state(state: str, provider: str) -> str:
 @router.get("/google/start")
 def google_start(
     user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    state = _new_state(user.id, "google")
+    state = _new_state(db, user.id, "google")
     return RedirectResponse(google_integ.authorize_url(state))
 
 
@@ -168,7 +186,7 @@ def google_callback(
     state: str = Query(...),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    user_id = _consume_state(state, "google")
+    user_id = _consume_state(db, state, "google")
     payload = google_integ.exchange_code(code)
     info = google_integ.fetch_userinfo(payload["access_token"])
     expires_at = datetime.utcnow() + timedelta(seconds=int(payload.get("expires_in", 3600)))
@@ -203,8 +221,9 @@ def google_callback(
 @router.get("/microsoft/start")
 def microsoft_start(
     user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    state = _new_state(user.id, "microsoft")
+    state = _new_state(db, user.id, "microsoft")
     return RedirectResponse(ms_integ.authorize_url(state))
 
 
@@ -214,7 +233,7 @@ def microsoft_callback(
     state: str = Query(...),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    user_id = _consume_state(state, "microsoft")
+    user_id = _consume_state(db, state, "microsoft")
     payload = ms_integ.exchange_code(code)
     info = ms_integ.fetch_userinfo(payload["access_token"])
     expires_at = datetime.utcnow() + timedelta(seconds=int(payload.get("expires_in", 3600)))

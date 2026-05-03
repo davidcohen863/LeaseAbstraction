@@ -3,60 +3,23 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..auth import AuthenticatedUser, current_user
 from ..config import get_settings
 from ..db import get_db
 from ..models import Document, FieldEdit, Lease, LeaseStatus
+from ..security import safe_filename as _safe_filename
+from ..security import serve_inside_sandbox as _serve_inside_sandbox
 from ..worker import run_extraction
 
 router = APIRouter(prefix="/leases", tags=["leases"])
-
-
-# ---- security helpers ---------------------------------------------------
-
-
-def _safe_filename(name: str | None) -> str:
-    """Strip path components and weird chars from an uploaded filename so it
-    can't escape the storage sandbox via `..`, `/`, or null bytes.
-
-    Rejects empty / null-byte input. Caller still adds a UUID prefix so the
-    sanitised name doesn't have to be unique.
-    """
-    if not name or "\x00" in name:
-        raise HTTPException(400, "Invalid filename")
-    base = Path(name).name  # strips any directory components
-    # Allow only safe ASCII chars in the final filename; collapse the rest to '_'
-    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._")
-    if not cleaned:
-        raise HTTPException(400, "Invalid filename")
-    return cleaned[:200]  # cap length
-
-
-def _serve_inside_sandbox(path: Path, *, media_type: str, filename: str) -> FileResponse:
-    """Refuse to serve a file whose resolved path is outside `storage_dir`.
-    Belt-and-braces: even though we sanitise filenames on the way in, a
-    historical or malicious DB row could still point outside.
-    """
-    settings = get_settings()
-    sandbox = settings.storage_dir.resolve()
-    try:
-        resolved = path.resolve()
-        resolved.relative_to(sandbox)
-    except (ValueError, OSError) as exc:
-        raise HTTPException(403, "Document path outside storage sandbox") from exc
-    if not resolved.exists():
-        raise HTTPException(404, "Document file missing on disk")
-    return FileResponse(resolved, media_type=media_type, filename=filename)
 
 
 # ---- response shapes -----------------------------------------------------
@@ -149,7 +112,17 @@ def list_leases(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[LeaseSummary]:
-    rows = db.execute(select(Lease).order_by(Lease.created_at.desc())).scalars().all()
+    # Eager-load property + documents — without this we'd issue (1 + 2N) queries
+    # on the way out (`l.property.address` and `len(l.documents)` per row).
+    rows = (
+        db.execute(
+            select(Lease)
+            .options(selectinload(Lease.property), selectinload(Lease.documents))
+            .order_by(Lease.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     return [_to_summary(l, document_count=len(l.documents)) for l in rows]
 
 
@@ -159,7 +132,11 @@ def get_lease(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> LeaseDetail:
-    lease = db.get(Lease, lease_id)
+    lease = db.execute(
+        select(Lease)
+        .options(selectinload(Lease.property), selectinload(Lease.documents))
+        .where(Lease.id == lease_id)
+    ).scalar_one_or_none()
     if lease is None:
         raise HTTPException(404, "Lease not found")
     return LeaseDetail(

@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,6 +23,7 @@ from ..models import (
     RentReviewPack,
 )
 from ..pack_worker import run_pack_generation
+from ..security import serve_inside_sandbox
 
 router = APIRouter(tags=["packs"])
 
@@ -247,14 +247,17 @@ def download_document(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    # Confirm the parent pack exists before we trust any path off the doc row.
+    # `pack_id` from the URL must match the doc's `pack_id` (an attacker can't
+    # mix-and-match a doc from one pack onto another pack's URL).
+    pack = db.get(RentReviewPack, pack_id)
+    if pack is None:
+        raise HTTPException(404, "Pack not found")
     doc = db.get(PackDocument, doc_id)
     if doc is None or doc.pack_id != pack_id:
         raise HTTPException(404, "Document not found")
-    path = Path(doc.storage_path)
-    if not path.exists():
-        raise HTTPException(404, "Document file missing on disk")
-    return FileResponse(
-        path,
+    return serve_inside_sandbox(
+        Path(doc.storage_path),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=doc.filename,
     )

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..auth import AuthenticatedUser, current_user
 from ..db import get_db
@@ -62,13 +62,9 @@ class PropertyDetail(PropertySummary):
 
 
 def _summarise(db: Session, prop: Property) -> PropertySummary:
-    leases = (
-        db.execute(
-            select(Lease).where(Lease.property_id == prop.id).order_by(Lease.created_at.desc())
-        )
-        .scalars()
-        .all()
-    )
+    # Use the eager-loaded relationship if present, otherwise query.
+    # The list endpoint uses selectinload(Property.leases) so this is the fast path.
+    leases = sorted(prop.leases, key=lambda l: l.created_at, reverse=True)
     # "Active" = the most recent non-failed lease; prefer approved.
     active = next((l for l in leases if l.status == LeaseStatus.APPROVED.value), None)
     if active is None:
@@ -117,7 +113,17 @@ def list_properties(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[PropertySummary]:
-    rows = db.execute(select(Property).order_by(Property.address)).scalars().all()
+    # Eager-load leases so _summarise() doesn't issue N more queries below.
+    # The "next event" lookup in _summarise still issues 1 query per property,
+    # which is acceptable — at 400 properties that's a rounding error and the
+    # query is well-indexed on (lease_id, event_date).
+    rows = (
+        db.execute(
+            select(Property).options(selectinload(Property.leases)).order_by(Property.address)
+        )
+        .scalars()
+        .all()
+    )
     return [_summarise(db, p) for p in rows]
 
 
@@ -127,18 +133,14 @@ def get_property(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> PropertyDetail:
-    prop = db.get(Property, property_id)
+    prop = db.execute(
+        select(Property).options(selectinload(Property.leases)).where(Property.id == property_id)
+    ).scalar_one_or_none()
     if prop is None:
         raise HTTPException(404, "Property not found")
     summary = _summarise(db, prop).model_dump()
 
-    leases = (
-        db.execute(
-            select(Lease).where(Lease.property_id == prop.id).order_by(Lease.created_at.desc())
-        )
-        .scalars()
-        .all()
-    )
+    leases = sorted(prop.leases, key=lambda l: l.created_at, reverse=True)
     lease_ids = [l.id for l in leases]
     upcoming = (
         db.execute(

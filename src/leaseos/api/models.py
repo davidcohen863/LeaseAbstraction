@@ -211,6 +211,23 @@ class OAuthToken(Base):
     )
 
 
+class OAuthState(Base):
+    """Single-use, short-lived state token issued at the start of an OAuth
+    redirect dance and consumed at the callback.
+
+    Replaces the in-process `_STATES` dict that didn't survive a Render
+    restart and didn't work behind multiple workers. Rows are GC'd by the
+    callback handler — anything older than 15 minutes is treated as expired.
+    """
+
+    __tablename__ = "oauth_states"
+
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class SlackIntegration(Base):
     __tablename__ = "slack_integrations"
 

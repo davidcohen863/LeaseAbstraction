@@ -49,9 +49,10 @@ gh repo create leaseos --private --source=. --push   # or do it via the GitHub U
    | Variable | Value |
    |---|---|
    | `ANTHROPIC_API_KEY` | from console.anthropic.com |
+   | `LEASEOS_SECRET_KEY` | a Fernet key — generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Used to encrypt Slack webhook URLs (and any future tokens) at rest. **Required in prod**: the API refuses to boot without it. |
    | `CLERK_JWKS_URL` | from Clerk (step 2) |
    | `CLERK_ISSUER` | from Clerk (step 2) |
-   | `LEASEOS_CORS_ORIGINS` | `https://YOUR-VERCEL-URL.vercel.app` (fill in after step 4) |
+   | `LEASEOS_CORS_ORIGINS` | `https://YOUR-VERCEL-URL.vercel.app` (fill in after step 4). Must be https-only — no `*`, no localhost. The API refuses to boot otherwise. |
    | `GOOGLE_CLIENT_ID` | from Google Cloud (step 5) |
    | `GOOGLE_CLIENT_SECRET` | from Google Cloud (step 5) |
    | `GOOGLE_REDIRECT_URI` | `https://leaseos-api.onrender.com/integrations/google/callback` |

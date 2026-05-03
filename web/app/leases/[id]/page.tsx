@@ -3,9 +3,14 @@
 import { use, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Pencil, Trash2 } from "lucide-react";
 import { api, type LeaseDetail } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/error-state";
+import { RowActions } from "@/components/ui/row-actions";
 import FieldsPanel from "./FieldsPanel";
 import { RightRail } from "./RightRail";
 
@@ -19,6 +24,64 @@ export default function LeaseDetailPage({ params }: { params: Promise<{ id: stri
   const error = leaseQ.error;
   const load = leaseQ.refetch;
   const [scrollPage, setScrollPage] = useState<number | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const router = useRouter();
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  function startRename() {
+    if (!lease) return;
+    setRenameDraft(lease.label);
+    setRenaming(true);
+  }
+  async function commitRename() {
+    if (!lease) return;
+    const trimmed = renameDraft.trim();
+    if (!trimmed || trimmed === lease.label) {
+      setRenaming(false);
+      return;
+    }
+    try {
+      await api.patchLease(lease.id, { label: trimmed });
+      toast.success("Lease renamed");
+      load();
+    } catch (e) {
+      toast.error("Couldn't rename", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRenaming(false);
+    }
+  }
+  async function deleteLease() {
+    if (!lease) return;
+    const ok = await confirm({
+      title: "Delete this lease?",
+      description: (
+        <>
+          <p className="mb-2">
+            <span className="font-medium">{lease.label}</span>
+          </p>
+          <p>
+            Removes the lease, every calendar event derived from it, every
+            review pack, every reviewer edit, and the original PDF on disk.
+            Comparables fed back from settled reviews on this lease are kept.
+            The Property record is kept too.
+          </p>
+          <p className="mt-2 font-medium">Cannot be undone.</p>
+        </>
+      ),
+      confirmLabel: "Delete lease",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteLease(lease.id);
+      toast.success("Lease deleted");
+      router.push("/leases");
+    } catch (e) {
+      toast.error("Couldn't delete", { description: e instanceof Error ? e.message : String(e) });
+    }
+  }
 
   // Poll while extraction is in progress
   useEffect(() => {
@@ -71,26 +134,62 @@ export default function LeaseDetailPage({ params }: { params: Promise<{ id: stri
               </>
             )}
           </nav>
-          <h1 className="text-lg font-semibold mt-1 truncate" title={lease.label}>{lease.label}</h1>
+          {renaming ? (
+            <input
+              autoFocus
+              value={renameDraft}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") setRenaming(false);
+              }}
+              className="mt-1 w-full rounded border border-neutral-400 bg-white px-2 py-1 text-lg font-semibold focus:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-neutral-500"
+              maxLength={255}
+            />
+          ) : (
+            <h1
+              className="group mt-1 inline-flex items-center gap-1.5 truncate text-lg font-semibold"
+              title={lease.label}
+            >
+              <span className="truncate">{lease.label}</span>
+              <button
+                onClick={startRename}
+                aria-label="Rename lease"
+                className="rounded p-1 text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-100 hover:text-neutral-700 group-hover:opacity-100"
+              >
+                <Pencil size={13} />
+              </button>
+            </h1>
+          )}
         </div>
-        {lease.extraction_model && (
-          <div className="shrink-0 group relative">
-            <span
-              className="cursor-help text-xs text-neutral-400 hover:text-neutral-600"
-              aria-describedby="extraction-meta"
-              title={`Extracted by ${lease.extraction_model} in ${lease.extraction_seconds?.toFixed(1)}s`}
-            >
-              ⓘ
-            </span>
-            <span
-              id="extraction-meta"
-              role="tooltip"
-              className="pointer-events-none absolute right-0 top-full mt-1 hidden whitespace-nowrap rounded bg-neutral-900 px-2 py-1 text-xs text-white shadow group-hover:block"
-            >
-              {lease.extraction_model} · {lease.extraction_seconds?.toFixed(1)}s
-            </span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {lease.extraction_model && (
+            <div className="group relative">
+              <span
+                className="cursor-help text-xs text-neutral-400 hover:text-neutral-600"
+                aria-describedby="extraction-meta"
+                title={`Extracted by ${lease.extraction_model} in ${lease.extraction_seconds?.toFixed(1)}s`}
+              >
+                ⓘ
+              </span>
+              <span
+                id="extraction-meta"
+                role="tooltip"
+                className="pointer-events-none absolute right-0 top-full mt-1 hidden whitespace-nowrap rounded bg-neutral-900 px-2 py-1 text-xs text-white shadow group-hover:block"
+              >
+                {lease.extraction_model} · {lease.extraction_seconds?.toFixed(1)}s
+              </span>
+            </div>
+          )}
+          <RowActions
+            label="Lease actions"
+            actions={[
+              { label: "Rename", icon: Pencil, onClick: startRename },
+              { label: "Delete lease", icon: Trash2, onClick: deleteLease, destructive: true },
+            ]}
+          />
+        </div>
       </div>
 
       {lease.status === "extracting" || lease.status === "uploaded" ? (

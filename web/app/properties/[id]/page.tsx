@@ -2,12 +2,16 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { differenceInDays, format, parseISO } from "date-fns";
-import { Building2, FileText, Pencil } from "lucide-react";
+import { Building2, FileText, Pencil, Trash2 } from "lucide-react";
 import { api, type PropertyDetail } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ErrorState } from "@/components/ui/error-state";
+import { RowActions } from "@/components/ui/row-actions";
 
 export default function PropertyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -16,6 +20,40 @@ export default function PropertyDetailPage({ params }: { params: Promise<{ id: s
   const error = propQ.error;
   const load = propQ.refetch;
   const [editing, setEditing] = useState(false);
+  const router = useRouter();
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  async function deleteProperty() {
+    if (!prop) return;
+    const hasLeases = prop.lease_count > 0;
+    const ok = await confirm({
+      title: hasLeases ? "Force-delete this property?" : "Delete this property?",
+      description: hasLeases ? (
+        <>
+          <p className="mb-2"><span className="font-medium">{prop.address}</span></p>
+          <p>
+            {prop.lease_count} lease{prop.lease_count === 1 ? "" : "s"} are still attached.
+            Force-deleting unlinks them — they survive but lose their Property
+            pointer. The next lease upload at this address creates a fresh
+            Property record.
+          </p>
+        </>
+      ) : (
+        <span className="font-medium">{prop.address}</span>
+      ),
+      confirmLabel: hasLeases ? "Unlink leases & delete" : "Delete property",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteProperty(prop.id, { force: hasLeases });
+      toast.success("Property deleted");
+      router.push("/properties");
+    } catch (e) {
+      toast.error("Couldn't delete", { description: e instanceof Error ? e.message : String(e) });
+    }
+  }
 
   if (error && !prop) {
     return (
@@ -47,13 +85,21 @@ export default function PropertyDetailPage({ params }: { params: Promise<{ id: s
             {prop.landlord_client && <span>· {prop.landlord_client}</span>}
           </div>
         </div>
-        <button
-          onClick={() => setEditing((e) => !e)}
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm hover:bg-neutral-50"
-        >
-          <Pencil size={14} />
-          {editing ? "Cancel" : "Edit"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => setEditing((e) => !e)}
+            className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm hover:bg-neutral-50"
+          >
+            <Pencil size={14} />
+            {editing ? "Cancel" : "Edit"}
+          </button>
+          <RowActions
+            label="Property actions"
+            actions={[
+              { label: "Delete property", icon: Trash2, onClick: deleteProperty, destructive: true },
+            ]}
+          />
+        </div>
       </header>
 
       {editing && <EditForm prop={prop} onSaved={() => { setEditing(false); void load(); }} />}

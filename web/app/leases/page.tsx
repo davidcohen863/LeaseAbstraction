@@ -8,15 +8,20 @@ import {
   ArrowUp,
   ArrowUpDown,
   Download,
+  Pencil,
   Search,
+  Trash2,
   Upload,
   Filter,
 } from "lucide-react";
 import { api, type LeaseEvent, type LeaseSummary, type PropertySummary } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { humanise } from "@/lib/humanise";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { RowActions } from "@/components/ui/row-actions";
 import { StatusPill } from "@/components/ui/status-pill";
 
 // ---- types --------------------------------------------------------------
@@ -350,6 +355,7 @@ export default function LeasesPage() {
                       selected={selected}
                       onToggleSelect={toggleSelect}
                       onToggleSelectAll={() => toggleSelectAll(rows)}
+                      onChanged={leasesQ.refetch}
                     />
                   </section>
                 ))}
@@ -367,6 +373,7 @@ export default function LeasesPage() {
                 selected={selected}
                 onToggleSelect={toggleSelect}
                 onToggleSelectAll={() => toggleSelectAll(sorted ?? [])}
+                onChanged={leasesQ.refetch}
               />
             )}
           </div>
@@ -507,7 +514,56 @@ function LeaseTable({
   selected,
   onToggleSelect,
   onToggleSelectAll,
-}: LeaseTableProps) {
+  onChanged,
+}: LeaseTableProps & { onChanged: () => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  async function rename(l: EnrichedLease) {
+    const next = window.prompt("Rename lease", l.label);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === l.label) return;
+    try {
+      await api.patchLease(l.id, { label: trimmed });
+      toast.success("Lease renamed");
+      onChanged();
+    } catch (e) {
+      toast.error("Couldn't rename", { description: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function deleteLease(l: EnrichedLease) {
+    const ok = await confirm({
+      title: `Delete this lease?`,
+      description: (
+        <>
+          <p className="mb-2">
+            <span className="font-medium">{l.label}</span>
+          </p>
+          <p>
+            This removes the lease, every calendar event derived from it, every
+            review pack, every reviewer edit, and the original PDF on disk.
+            Comparables fed back from settled reviews on this lease are kept
+            (the rent evidence stays valid). The Property record is kept too.
+          </p>
+          <p className="mt-2 font-medium">Cannot be undone.</p>
+        </>
+      ),
+      confirmLabel: "Delete lease",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteLease(l.id);
+      toast.success("Lease deleted");
+      onChanged();
+    } catch (e) {
+      toast.error("Couldn't delete", { description: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const someSelected = rows.some((r) => selected.has(r.id));
   return (
@@ -571,9 +627,18 @@ function LeaseTable({
                 {formatDistanceToNow(new Date(l.created_at), { addSuffix: true })}
               </td>
               <td className="px-4 py-3 text-right">
-                <Link href={`/leases/${l.id}`} className="text-sm text-neutral-600 hover:text-neutral-900">
-                  Open →
-                </Link>
+                <div className="inline-flex items-center gap-1">
+                  <Link href={`/leases/${l.id}`} className="text-sm text-neutral-600 hover:text-neutral-900">
+                    Open →
+                  </Link>
+                  <RowActions
+                    label={`Actions for ${l.label}`}
+                    actions={[
+                      { label: "Rename", icon: Pencil, onClick: () => rename(l) },
+                      { label: "Delete", icon: Trash2, onClick: () => deleteLease(l), destructive: true },
+                    ]}
+                  />
+                </div>
               </td>
             </tr>
           ))}

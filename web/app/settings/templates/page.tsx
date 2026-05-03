@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import { Check, Download, FileBadge, Trash2, Upload } from "lucide-react";
 import { api, type TemplateInfo } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/error-state";
 
 const KIND_DESCRIPTIONS: Record<string, string> = {
@@ -58,22 +60,23 @@ export default function TemplatesPage() {
 function TemplateCard({ template, onChanged }: { template: TemplateInfo; onChanged: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<"idle" | "uploading" | "deleting">("idle");
-  const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
+  const confirm = useConfirm();
 
   async function onFile(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
     if (!file.name.toLowerCase().endsWith(".docx")) {
-      setErr("Template must be a .docx file");
+      toast.error("Template must be a .docx file");
       return;
     }
     setBusy("uploading");
-    setErr(null);
     try {
       await api.uploadTemplate(template.kind, file);
+      toast.success(`${template.label} template uploaded`, { description: file.name });
       onChanged();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      toast.error("Upload failed", { description: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy("idle");
       if (fileRef.current) fileRef.current.value = "";
@@ -81,14 +84,20 @@ function TemplateCard({ template, onChanged }: { template: TemplateInfo; onChang
   }
 
   async function onDelete() {
-    if (!confirm(`Revert ${template.label} to the LeaseOS default style?`)) return;
+    const ok = await confirm({
+      title: `Revert ${template.label} to the LeaseOS default?`,
+      description: "Future packs will use the built-in Calibri 11pt style. Your custom .docx is removed from the server.",
+      confirmLabel: "Revert to default",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy("deleting");
-    setErr(null);
     try {
       await api.deleteTemplate(template.kind);
+      toast.success(`${template.label} reverted to default`);
       onChanged();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      toast.error("Couldn't revert", { description: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy("idle");
     }
@@ -175,9 +184,6 @@ function TemplateCard({ template, onChanged }: { template: TemplateInfo; onChang
           )}
         </div>
       </div>
-      {err && (
-        <p className="mt-3 rounded bg-red-50 p-2 text-xs text-red-800">{err}</p>
-      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-03 (after P2.1 UI completion: useApi+ErrorState across every fetching page, polished empty states, real notification bell, per-firm Word template upload)
+- Last updated: 2026-05-04 (after P2.2 CRUD + UX polish: DELETE/rename for lease/pack/property, toast + confirm-dialog systems, row-action menus, inline rename)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -353,6 +353,12 @@ leaseos/
       ui/error-state.tsx     # P2.1 — shared error card with Retry; recognises
                              #   ApiTimeoutError / ApiHttpError to show useful
                              #   messages (e.g. "took longer than 15s")
+      ui/toast.tsx           # P2.2 — useToast() + <Toaster>; replaces silent
+                             #   actions and alert() with bottom-right cards
+      ui/confirm-dialog.tsx  # P2.2 — useConfirm() + <ConfirmDialog>; replaces
+                             #   browser confirm() with a native <dialog> modal
+      ui/row-actions.tsx     # P2.2 — three-dot ⋯ row-action menu (Rename/Delete)
+                             #   used on every list table
       calendar/month-grid.tsx   # P1 — 7-col month grid (date-fns, no library)
       calendar/event-drawer.tsx # P1 — slide-in drawer for event detail + actions
     lib/
@@ -656,6 +662,39 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.10 P2.2 CRUD + UX polish (landed 2026-05-04)
+
+User pushback was honest and correct: the P2.1 pass was UX-shaped but missing the most basic destructive operations. If Sarah uploaded the wrong PDF, she was stuck with garbage on the dashboard forever. There were also three browser `confirm()` dialogs and four `alert()`s scattered around — every action was either silent or used a 1995-vintage modal.
+
+**Backend:**
+- ✅ `DELETE /leases/{id}` — cascades documents, events, packs, edits via SQLAlchemy `cascade="all, delete-orphan"` (Lease → Pack relationship was missing; added). Cleans up on-disk PDFs and `data/packs/<pack_id>/` dirs after the DB commit succeeds. Property record is intentionally preserved (may host other leases over its lifetime, and even if not, the user-edited landlord_client / sector / notes shouldn't silently vanish — use DELETE /properties/{id} explicitly). Comparables derived from settled reviews on this lease keep their evidence; only `derived_from_lease_id` is null'd.
+- ✅ `DELETE /packs/{id}` — cascades PackDocument rows + cleans `data/packs/<pack_id>/`. Refuses to delete `settled` packs (settled rent has fed into comparables + audit trail; deletion would lose provenance). Returns 400 with explanation in that case.
+- ✅ `DELETE /properties/{id}` — refuses if any leases attached unless `?force=true`. With force, leases are unlinked (property_id null'd) and survive; the next upload at the same address creates a fresh Property.
+- ✅ `PATCH /leases/{id}` — rename label. Audit-logged via FieldEdit with synthetic field_path `__label__`. Empty / whitespace-only / >255 char rejected. No-op (same value) doesn't write an audit row.
+- 14 new tests in `tests/test_destructive.py` cover the cascade math + the property-survives-lease-delete invariant + the comparables-orphan-FK-null'd invariant + the settled-pack refusal + force vs no-force property delete + audit-log capture for renames.
+
+**Frontend foundations (mounted once at root):**
+- ✅ `<ToastProvider>` + `useToast()` — bottom-right toast cards (success / error / info), Mac-OS-style slide-in, default 4s auto-dismiss (errors stick around for 7s). Replaces silent actions everywhere.
+- ✅ `<ConfirmHost>` + `useConfirm()` — imperative `confirm({...})` API backed by a native `<dialog>` modal (gets focus-trapping, ESC-to-close, backdrop-click-to-close for free). Replaces every `window.confirm()` in the app. Async-friendly: shows "Working…" while the action is in flight.
+- ✅ `<RowActions>` — three-dot ⋯ menu used on every list table for per-row actions (Rename, Delete, etc). Outside-click + Esc dismiss; destructive actions render in red.
+
+**Where each is rolled out:**
+- `/leases` table — Rename (window.prompt for now; could be a modal later) + Delete
+- `/leases/[id]` header — inline-editable label (click pencil icon, Enter to save, Esc to cancel) + Delete in row-action menu (routes to `/leases` after)
+- `/packs` table + `/packs/[id]` header — Delete (disabled state with explanation if pack is settled)
+- `/properties` table + `/properties/[id]` header — Delete (auto-passes `?force=true` if leases attached, with the stronger confirm copy)
+- All four template-page actions, comparables delete, ancillary-doc delete, pack mark-sent, pack auto-trigger, pack-from-event generation in 4 places (calendar drawer, calendar list, reviews kanban, lease right rail) — every one now uses toast + confirm.
+
+Zero `alert()` and zero `window.confirm()` left in the app code (the lone surviving `window.confirm()` is the safety fallback inside `useConfirm()` itself for the case where `<ConfirmHost>` isn't mounted).
+
+121 → 135 backend tests. Frontend `tsc --noEmit` clean.
+
+**What's still genuinely missing (not in this pass):**
+- No bulk delete on the `/leases` selection toolbar yet (the checkbox column exists but only enables CSV export). Easy follow-up.
+- Rename on `/leases` table uses `window.prompt` — fine for now but could be a proper inline-edit row.
+- Undo for destructive actions — would need a soft-delete model. Not in scope for v1.
+- Frontend test runner (vitest) still not added.
 
 ### 9.4.9 P2.1 UI completion (landed 2026-05-03)
 

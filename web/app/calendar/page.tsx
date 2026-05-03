@@ -16,6 +16,7 @@ import {
 import { ChevronLeft, ChevronRight, CalendarDays, List as ListIcon } from "lucide-react";
 import { api, type LeaseEvent } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { useToast } from "@/components/ui/toast";
 import { StatusPill, EVENT_TYPE_TONE } from "@/components/ui/status-pill";
 import { ErrorState } from "@/components/ui/error-state";
 import { MonthGrid } from "@/components/calendar/month-grid";
@@ -297,6 +298,7 @@ function ListView({ events }: { events: LeaseEvent[] }) {
 
 function EventRow({ e }: { e: LeaseEvent }) {
   const router = useRouter();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const dt = parseISO(e.event_date);
   const overdue = isPast(dt);
@@ -308,9 +310,12 @@ function EventRow({ e }: { e: LeaseEvent }) {
     setBusy(true);
     try {
       const pack = await api.generatePackForEvent(e.id);
+      toast.success("Pack queued — opening…");
       router.push(`/packs/${pack.id}`);
     } catch (err) {
-      alert(`Failed: ${err}`);
+      toast.error("Couldn't generate pack", {
+        description: err instanceof Error ? err.message : String(err),
+      });
       setBusy(false);
     }
   }

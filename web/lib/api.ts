@@ -275,6 +275,21 @@ export const api = {
   approve: (id: string, opts?: FetchOpts) =>
     call<LeaseDetail>(`/leases/${id}/approve`, { method: "POST", ...opts }),
 
+  patchLease: (
+    id: string,
+    body: { label?: string },
+    opts?: FetchOpts,
+  ) =>
+    call<LeaseSummary>(`/leases/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      ...opts,
+    }),
+
+  deleteLease: (id: string, opts?: FetchOpts) =>
+    call<void>(`/leases/${id}`, { method: "DELETE", ...opts }),
+
   listEvents: (
     params?: { days_ahead?: number; days_behind?: number },
     opts?: FetchOpts
@@ -404,6 +419,14 @@ export const api = {
       body: JSON.stringify({ settled_rent_gbp }),
       ...opts,
     }),
+  deletePack: (id: string, opts?: FetchOpts) =>
+    call<void>(`/packs/${id}`, { method: "DELETE", ...opts }),
+
+  // Properties (delete)
+  deleteProperty: (id: string, opts?: FetchOpts & { force?: boolean }) => {
+    const force = opts?.force ? "?force=true" : "";
+    return call<void>(`/properties/${id}${force}`, { method: "DELETE", ...opts });
+  },
 
   // Templates (per-firm Word .docx for the pack generator)
   listTemplates: (opts?: FetchOpts) => call<TemplateInfo[]>("/templates", opts),

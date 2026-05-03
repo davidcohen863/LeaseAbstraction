@@ -129,6 +129,13 @@ class Lease(Base):
     edits: Mapped[list["FieldEdit"]] = relationship(
         back_populates="lease", cascade="all, delete-orphan"
     )
+    # Cascade so DELETE /leases/{id} also removes any review packs (and via
+    # PackDocument's own cascade, the per-doc rows). The on-disk files in
+    # data/packs/<pack_id>/ are cleaned up explicitly in the route handler
+    # since SQLAlchemy can't reach the filesystem.
+    packs: Mapped[list["RentReviewPack"]] = relationship(
+        back_populates="lease", cascade="all, delete-orphan"
+    )
 
 
 class Document(Base):
@@ -320,6 +327,7 @@ class RentReviewPack(Base):
     documents: Mapped[list["PackDocument"]] = relationship(
         back_populates="pack", cascade="all, delete-orphan"
     )
+    lease: Mapped[Lease] = relationship(back_populates="packs")
 
 
 class PackDocument(Base):

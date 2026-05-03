@@ -10,12 +10,17 @@ import {
   FileText,
   Pencil,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { api, type Comparable, type PackDetail, type PackDocumentOut } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ErrorState } from "@/components/ui/error-state";
+import { RowActions } from "@/components/ui/row-actions";
 
 const KIND_LABEL: Record<string, string> = {
   landlord_memo: "Landlord memo",
@@ -41,6 +46,33 @@ export default function PackDetailPage({ params }: { params: Promise<{ id: strin
   const load = packQ.refetch;
   const [activeKind, setActiveKind] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const router = useRouter();
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  async function deletePack() {
+    if (!pack) return;
+    if (pack.status === "settled") {
+      toast.error("Settled packs can't be deleted", {
+        description: "The settled rent has fed into comparables and the audit trail.",
+      });
+      return;
+    }
+    const ok = await confirm({
+      title: "Delete this pack?",
+      description: `${pack.lease_label ?? pack.lease_id} — status ${pack.status}. The four generated documents are removed from disk.`,
+      confirmLabel: "Delete pack",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deletePack(pack.id);
+      toast.success("Pack deleted");
+      router.push("/packs");
+    } catch (e) {
+      toast.error("Couldn't delete", { description: e instanceof Error ? e.message : String(e) });
+    }
+  }
 
   // Poll while generating
   useEffect(() => {
@@ -99,6 +131,18 @@ export default function PackDetailPage({ params }: { params: Promise<{ id: strin
             <span>· created {format(parseISO(pack.created_at), "d MMM yyyy HH:mm")}</span>
           </div>
         </div>
+        <RowActions
+          label="Pack actions"
+          actions={[
+            {
+              label: pack.status === "settled" ? "Delete (settled — blocked)" : "Delete pack",
+              icon: Trash2,
+              onClick: deletePack,
+              destructive: true,
+              disabled: pack.status === "settled",
+            },
+          ]}
+        />
       </header>
 
       {pack.status === "generating" && (

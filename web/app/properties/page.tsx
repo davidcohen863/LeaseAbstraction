@@ -3,11 +3,14 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
-import { Building2 } from "lucide-react";
+import { Building2, Trash2 } from "lucide-react";
 import { api, type PropertySummary } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { RowActions } from "@/components/ui/row-actions";
 
 export default function PropertiesPage() {
   const { data: props, loading, refetching, error, refetch } = useApi<PropertySummary[]>(
@@ -89,18 +92,55 @@ export default function PropertiesPage() {
               <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
                 {client} <span className="text-neutral-400">({items.length})</span>
               </h2>
-              <PropertyTable items={items} />
+              <PropertyTable items={items} onChanged={refetch} />
             </section>
           ))}
         </div>
       ) : (
-        <PropertyTable items={filtered ?? []} />
+        <PropertyTable items={filtered ?? []} onChanged={refetch} />
       )}
     </div>
   );
 }
 
-function PropertyTable({ items }: { items: PropertySummary[] }) {
+function PropertyTable({ items, onChanged }: { items: PropertySummary[]; onChanged: () => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  async function deleteProperty(p: PropertySummary) {
+    const hasLeases = p.lease_count > 0;
+    const ok = await confirm({
+      title: hasLeases ? "Force-delete this property?" : "Delete this property?",
+      description: hasLeases ? (
+        <>
+          <p className="mb-2">
+            <span className="font-medium">{p.address}</span>
+          </p>
+          <p>
+            {p.lease_count} lease{p.lease_count === 1 ? "" : "s"} are still attached.
+            Force-deleting unlinks them — they survive but lose their Property
+            pointer. The next lease upload at this address creates a fresh
+            Property record.
+          </p>
+        </>
+      ) : (
+        <>
+          <span className="font-medium">{p.address}</span>
+        </>
+      ),
+      confirmLabel: hasLeases ? "Unlink leases & delete" : "Delete property",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteProperty(p.id, { force: hasLeases });
+      toast.success("Property deleted");
+      onChanged();
+    } catch (e) {
+      toast.error("Couldn't delete", { description: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
       <table className="w-full text-sm">
@@ -140,9 +180,17 @@ function PropertyTable({ items }: { items: PropertySummary[] }) {
                 )}
               </td>
               <td className="px-4 py-3 text-right">
-                <Link href={`/properties/${p.id}`} className="text-sm text-neutral-600 hover:text-neutral-900">
-                  Open →
-                </Link>
+                <div className="inline-flex items-center gap-1">
+                  <Link href={`/properties/${p.id}`} className="text-sm text-neutral-600 hover:text-neutral-900">
+                    Open →
+                  </Link>
+                  <RowActions
+                    label={`Actions for ${p.address}`}
+                    actions={[
+                      { label: "Delete", icon: Trash2, onClick: () => deleteProperty(p), destructive: true },
+                    ]}
+                  />
+                </div>
               </td>
             </tr>
           ))}

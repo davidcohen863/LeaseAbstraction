@@ -26,6 +26,8 @@ import {
   type LeaseEvent,
   type PackSummary,
 } from "@/lib/api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { StatusPill } from "@/components/ui/status-pill";
 
 const CRITICAL_TYPES = new Set([
@@ -43,6 +45,7 @@ interface Props {
 
 export function RightRail({ lease, onApprove, onChanged }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [events, setEvents] = useState<LeaseEvent[] | null>(null);
   const [packs, setPacks] = useState<PackSummary[] | null>(null);
   const [activity, setActivity] = useState<AuditEntry[] | null>(null);
@@ -72,9 +75,12 @@ export function RightRail({ lease, onApprove, onChanged }: Props) {
     setGenerating(eventId);
     try {
       const pack = await api.generatePackForEvent(eventId);
+      toast.success("Pack queued — opening…");
       router.push(`/packs/${pack.id}`);
     } catch (e) {
-      alert(`Failed: ${e}`);
+      toast.error("Couldn't generate pack", {
+        description: e instanceof Error ? e.message : String(e),
+      });
       setGenerating(null);
     }
   }
@@ -282,6 +288,7 @@ function AttachedDocs({ lease, onChanged }: { lease: LeaseDetail; onChanged: () 
   const [uploading, setUploading] = useState(false);
   const [pickRole, setPickRole] = useState<AncillaryDocumentRole>("side_letter");
   const fileRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
 
   // Poll while any attached doc is mid-summarising
   useEffect(() => {
@@ -300,9 +307,15 @@ function AttachedDocs({ lease, onChanged }: { lease: LeaseDetail; onChanged: () 
       for (const file of Array.from(files)) {
         await api.attachDocument(lease.id, file, pickRole);
       }
+      const n = files.length;
+      toast.success(`Attached ${n} document${n === 1 ? "" : "s"}`, {
+        description: "Summary will appear here once Claude finishes reading.",
+      });
       await onChanged();
     } catch (e) {
-      alert(`Upload failed: ${e}`);
+      toast.error("Upload failed", {
+        description: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -368,13 +381,26 @@ function AttachedDocs({ lease, onChanged }: { lease: LeaseDetail; onChanged: () 
 function AncillaryItem({ doc, leaseId, onChanged }: { doc: DocumentOut; leaseId: string; onChanged: () => Promise<void> }) {
   const [expanded, setExpanded] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
 
   async function deleteDoc() {
-    if (!confirm(`Delete "${doc.filename}"?`)) return;
+    const ok = await confirm({
+      title: `Delete "${doc.filename}"?`,
+      description: "The file is removed from the server. Cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       await api.deleteAttachedDocument(leaseId, doc.id);
+      toast.success("Document deleted");
       await onChanged();
+    } catch (e) {
+      toast.error("Couldn't delete", {
+        description: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setDeleting(false);
     }

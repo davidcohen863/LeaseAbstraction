@@ -13,6 +13,8 @@ import {
 import { api, type Comparable } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { parseCsv } from "@/lib/csv";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 
@@ -58,6 +60,8 @@ export default function ComparablesPage() {
     (opts) => api.listComparables(opts),
   );
   const load = refetch;
+  const toast = useToast();
+  const confirm = useConfirm();
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -208,8 +212,25 @@ export default function ComparablesPage() {
           sortDir={sortDir}
           onToggleSort={toggleSort}
           onDelete={async (id) => {
-            await api.deleteComparable(id);
-            void load();
+            const target = comps?.find((x) => x.id === id);
+            const ok = await confirm({
+              title: "Delete this comparable?",
+              description: target
+                ? `${target.address} — £${target.rent_pa_gbp.toLocaleString()}`
+                : undefined,
+              confirmLabel: "Delete",
+              destructive: true,
+            });
+            if (!ok) return;
+            try {
+              await api.deleteComparable(id);
+              toast.success("Comparable deleted");
+              void load();
+            } catch (e) {
+              toast.error("Couldn't delete", {
+                description: e instanceof Error ? e.message : String(e),
+              });
+            }
           }}
         />
       )}
@@ -272,10 +293,7 @@ function ComparableTable({
                 <td className="px-4 py-3"><SourceBadge value={c.source} /></td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={async () => {
-                      if (!confirm(`Delete comparable "${c.address}"?`)) return;
-                      await onDelete(c.id);
-                    }}
+                    onClick={() => onDelete(c.id)}
                     className="text-xs text-red-600 hover:text-red-800"
                   >
                     Delete

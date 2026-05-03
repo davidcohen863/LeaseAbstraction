@@ -3,17 +3,45 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
-import { Package } from "lucide-react";
+import { Package, Trash2 } from "lucide-react";
 import { api, type PackSummary } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { RowActions } from "@/components/ui/row-actions";
 import { StatusPill } from "@/components/ui/status-pill";
 
 export default function PacksListPage() {
   const { data: packs, loading, refetching, error, refetch } = useApi<PackSummary[]>(
     (opts) => api.listPacks(undefined, opts),
   );
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  async function deletePack(p: PackSummary) {
+    if (p.status === "settled") {
+      toast.error("Settled packs can't be deleted", {
+        description: "The settled rent has fed into comparables and the audit trail.",
+      });
+      return;
+    }
+    const ok = await confirm({
+      title: "Delete this pack?",
+      description: `${p.lease_label ?? p.lease_id} — status ${p.status}. The four generated documents are removed from disk.`,
+      confirmLabel: "Delete pack",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deletePack(p.id);
+      toast.success("Pack deleted");
+      refetch();
+    } catch (e) {
+      toast.error("Couldn't delete", { description: e instanceof Error ? e.message : String(e) });
+    }
+  }
 
   // Poll while any pack is mid-generation
   useEffect(() => {
@@ -84,7 +112,21 @@ export default function PacksListPage() {
                   <td className="px-4 py-3 text-right">{p.settled_rent_gbp ? `£${p.settled_rent_gbp.toLocaleString()}` : "—"}</td>
                   <td className="px-4 py-3 text-neutral-500">{format(parseISO(p.created_at), "d MMM yyyy")}</td>
                   <td className="px-4 py-3 text-right">
-                    <Link href={`/packs/${p.id}`} className="text-sm text-neutral-600 hover:text-neutral-900">Open →</Link>
+                    <div className="inline-flex items-center gap-1">
+                      <Link href={`/packs/${p.id}`} className="text-sm text-neutral-600 hover:text-neutral-900">Open →</Link>
+                      <RowActions
+                        label={`Actions for pack ${p.id}`}
+                        actions={[
+                          {
+                            label: p.status === "settled" ? "Delete (settled — blocked)" : "Delete",
+                            icon: Trash2,
+                            onClick: () => deletePack(p),
+                            destructive: true,
+                            disabled: p.status === "settled",
+                          },
+                        ]}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}

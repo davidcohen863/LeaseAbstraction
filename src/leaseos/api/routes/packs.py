@@ -288,6 +288,48 @@ def patch_pack(
     return _summary(pack, lease.label if lease else None)
 
 
+@router.delete("/packs/{pack_id}", status_code=204)
+def delete_pack(
+    pack_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Delete a rent-review pack and its generated documents.
+
+    Cascades the PackDocument rows. Cleans up the on-disk
+    `data/packs/<pack_id>/*.docx` files. Refuses to delete a pack in
+    `settled` status — once you've recorded a settled rent, that decision
+    has fed back into the comparables database and the audit trail; deleting
+    the pack would lose that provenance. Surveyors who genuinely want a
+    settled pack gone should ask an admin or hand-edit the DB.
+    """
+    pack = db.get(RentReviewPack, pack_id)
+    if pack is None:
+        raise HTTPException(404, "Pack not found")
+    if pack.status == PackStatus.SETTLED.value:
+        raise HTTPException(
+            400,
+            "Cannot delete a settled pack — the settled rent has fed into "
+            "comparables and the audit trail. Re-open / re-generate instead.",
+        )
+
+    # Snapshot file paths before SQLAlchemy deletes the rows
+    from ..config import get_settings as _get_settings
+    settings = _get_settings()
+    pack_dir = settings.storage_dir.parent / "packs" / pack.id
+
+    db.delete(pack)
+    db.commit()
+
+    if pack_dir.exists():
+        try:
+            for f in pack_dir.iterdir():
+                f.unlink()
+            pack_dir.rmdir()
+        except OSError:
+            pass  # leave for housekeeping if something went wrong
+
+
 @router.post("/packs/{pack_id}/sent", response_model=PackSummary)
 def mark_sent(
     pack_id: str,

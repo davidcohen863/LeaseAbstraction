@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { api, type LeaseEvent, type PackSummary } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { ErrorState } from "@/components/ui/error-state";
 
 type ColumnKey = "pending" | "draft" | "sent" | "settled";
@@ -134,6 +136,7 @@ function AutoTriggerButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const toast = useToast();
 
   if (pendingCount === 0) return null;
 
@@ -143,13 +146,15 @@ function AutoTriggerButton({
     setBusy(true);
     try {
       const res = await api.autoTriggerPacks({ days_ahead: 180 });
-      onTriggered();
-      // Lightweight success feedback
-      console.log(
-        `auto-trigger: queued ${res.triggered} of ${res.candidates_seen} candidates`
+      toast.success(
+        `Queued ${res.triggered} pack${res.triggered === 1 ? "" : "s"}`,
+        { description: `${res.candidates_seen} candidate event${res.candidates_seen === 1 ? "" : "s"} considered.` },
       );
+      onTriggered();
     } catch (e) {
-      alert(`Auto-trigger failed: ${e}`);
+      toast.error("Auto-trigger failed", {
+        description: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setBusy(false);
       setConfirming(false);
@@ -312,6 +317,7 @@ function Column({
 
 function PendingCardView({ card, onChanged }: { card: PendingCard; onChanged: () => void }) {
   const router = useRouter();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const dt = parseISO(card.trigger_date);
   const days = differenceInDays(dt, new Date());
@@ -320,10 +326,13 @@ function PendingCardView({ card, onChanged }: { card: PendingCard; onChanged: ()
     setBusy(true);
     try {
       const pack = await api.generatePackForEvent(card.id);
+      toast.success("Pack queued — opening…");
       router.push(`/packs/${pack.id}`);
       onChanged();
     } catch (e) {
-      alert(`Failed: ${e}`);
+      toast.error("Couldn't generate pack", {
+        description: e instanceof Error ? e.message : String(e),
+      });
       setBusy(false);
     }
   }
@@ -360,13 +369,26 @@ function PendingCardView({ card, onChanged }: { card: PendingCard; onChanged: ()
 function PackCardView({ card, onChanged }: { card: PackCard; onChanged: () => void }) {
   const p = card.pack;
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
 
   async function markSent() {
-    if (!confirm("Mark this pack as sent to the tenant?")) return;
+    const ok = await confirm({
+      title: "Mark this pack as sent to the tenant?",
+      description:
+        "This records that the trigger letter has been delivered. The pack moves to the Sent column. You can still record a settled rent later.",
+      confirmLabel: "Yes, mark sent",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await api.markPackSent(p.id);
+      toast.success("Pack marked as sent");
       onChanged();
+    } catch (e) {
+      toast.error("Couldn't mark sent", {
+        description: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setBusy(false);
     }

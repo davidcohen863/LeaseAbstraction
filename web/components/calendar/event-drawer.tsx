@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { X, ExternalLink, Package } from "lucide-react";
 import { api, type LeaseEvent } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
 import { StatusPill } from "@/components/ui/status-pill";
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 
 export function EventDrawer({ event, onClose }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [generating, setGenerating] = useState(false);
 
   // Close on Escape
@@ -39,10 +41,13 @@ export function EventDrawer({ event, onClose }: Props) {
     setGenerating(true);
     try {
       const pack = await api.generatePackForEvent(event.id);
+      toast.success("Pack queued — opening…");
       onClose();
       router.push(`/packs/${pack.id}`);
     } catch (e) {
-      alert(`Failed to generate pack: ${e}`);
+      toast.error("Couldn't generate pack", {
+        description: e instanceof Error ? e.message : String(e),
+      });
       setGenerating(false);
     }
   }

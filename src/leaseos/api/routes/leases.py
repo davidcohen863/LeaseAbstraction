@@ -334,6 +334,117 @@ def patch_field(
     return {"ok": True, "field_path": field_path, "before": before, "after": body.value}
 
 
+class LeasePatch(BaseModel):
+    """Editable lease metadata. None = leave unchanged."""
+
+    label: str | None = None
+
+
+@router.patch("/{lease_id}", response_model=LeaseSummary)
+def patch_lease(
+    lease_id: str,
+    body: LeasePatch,
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> LeaseSummary:
+    """Edit top-level lease metadata. Today: label only. Audit-logged."""
+    lease = db.get(Lease, lease_id)
+    if lease is None:
+        raise HTTPException(404, "Lease not found")
+    if body.label is not None:
+        new = body.label.strip()
+        if not new:
+            raise HTTPException(400, "Label cannot be empty")
+        if len(new) > 255:
+            raise HTTPException(400, "Label must be ≤ 255 characters")
+        if new != lease.label:
+            db.add(
+                FieldEdit(
+                    lease_id=lease.id,
+                    field_path="__label__",
+                    before_value={"v": lease.label},
+                    after_value={"v": new},
+                    actor_user_id=user.id,
+                )
+            )
+            lease.label = new
+    db.commit()
+    db.refresh(lease)
+    return _to_summary(lease, document_count=len(lease.documents))
+
+
+@router.delete("/{lease_id}", status_code=204)
+def delete_lease(
+    lease_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Delete a lease and everything that hangs off it.
+
+    Cascades:
+      * documents (Document — rows + on-disk PDFs cleaned below)
+      * events (LeaseEvent)
+      * field edits (FieldEdit)
+      * review packs (RentReviewPack → PackDocument; on-disk .docx cleaned below)
+
+    The Property the lease belonged to is intentionally NOT deleted — a
+    Property may have other leases over its lifetime, and even if this was
+    the last one, dropping it silently would lose any landlord_client /
+    sector / notes the user added. Use DELETE /properties/{id} explicitly.
+
+    Comparables that were derived from a settled review on this lease keep
+    their `derived_from_lease_id` reference null'd out — the rent evidence
+    itself stays valid even after the source lease is gone.
+
+    Hard delete: there is no soft-delete or "trash" yet. The audit log
+    captures the field edits, but the lease row + files are gone.
+    """
+    lease = db.get(Lease, lease_id)
+    if lease is None:
+        raise HTTPException(404, "Lease not found")
+
+    # Snapshot file paths before SQLAlchemy deletes the rows
+    document_paths = [Path(d.storage_path) for d in lease.documents]
+    pack_dirs: list[Path] = []
+    settings = get_settings()
+    packs_root = settings.storage_dir.parent / "packs"
+    for pack in lease.packs:
+        pack_dir = packs_root / pack.id
+        if pack_dir.exists():
+            pack_dirs.append(pack_dir)
+
+    # Null out derived_from_lease_id on any internal Comparables so the FK
+    # doesn't block the delete. We import here to avoid a circular import.
+    from sqlalchemy import update
+
+    from ..models import Comparable
+
+    db.execute(
+        update(Comparable)
+        .where(Comparable.derived_from_lease_id == lease.id)
+        .values(derived_from_lease_id=None)
+    )
+
+    db.delete(lease)
+    db.commit()
+
+    # Clean up filesystem AFTER the DB commit succeeds — if the commit fails,
+    # the files survive and the lease is still usable.
+    for path in document_paths:
+        try:
+            if path.exists():
+                path.unlink()
+        except OSError:
+            pass  # best-effort; periodic disk-housekeeping job will catch leftovers
+    for pack_dir in pack_dirs:
+        try:
+            for f in pack_dir.iterdir():
+                f.unlink()
+            pack_dir.rmdir()
+        except OSError:
+            pass
+
+
 @router.post("/{lease_id}/approve", response_model=LeaseDetail)
 def approve_lease(
     lease_id: str,

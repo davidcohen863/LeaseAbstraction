@@ -172,6 +172,52 @@ class PropertyPatch(BaseModel):
     notes: str | None = None
 
 
+@router.delete("/{property_id}", status_code=204)
+def delete_property(
+    property_id: str,
+    force: bool = False,
+    user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Delete a Property record.
+
+    Refuses if any leases are still attached unless `?force=true`. With
+    `force`, the property is deleted but its leases lose their `property_id`
+    pointer (they survive — Property is a grouping, not the source of truth).
+    The leases will get re-linked or re-created the next time someone uploads
+    a lease at the same address (the auto-link logic dedupes by normalised
+    address).
+
+    Use case: you ran into the address-normalisation dedupe being wrong
+    (e.g. "Suite 4, 14 Main St" and "14 Main St" linked together) and want
+    to break the link. Delete and the next lease upload at that address
+    creates a fresh Property row.
+    """
+    prop = db.get(Property, property_id)
+    if prop is None:
+        raise HTTPException(404, "Property not found")
+
+    leases = db.execute(
+        select(Lease).where(Lease.property_id == prop.id)
+    ).scalars().all()
+
+    if leases and not force:
+        raise HTTPException(
+            400,
+            f"Property has {len(leases)} lease(s) still attached — pass ?force=true "
+            f"to delete anyway (leases survive but become unlinked).",
+        )
+
+    # Detach leases first so the FK doesn't block deletion
+    from sqlalchemy import update
+
+    db.execute(
+        update(Lease).where(Lease.property_id == prop.id).values(property_id=None)
+    )
+    db.delete(prop)
+    db.commit()
+
+
 @router.patch("/{property_id}", response_model=PropertySummary)
 def update_property(
     property_id: str,

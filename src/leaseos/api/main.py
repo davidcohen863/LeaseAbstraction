@@ -22,6 +22,7 @@ from .request_context import RequestContextMiddleware
 from .routes import audit as audit_routes
 from .routes import comparables as comparables_routes
 from .routes import events as events_routes
+from .routes import health as health_routes
 from .routes import integrations as integrations_routes
 from .routes import leases as leases_routes
 from .routes import packs as packs_routes
@@ -112,10 +113,7 @@ def create_app() -> FastAPI:
     # Outermost — every other middleware sees a request_id in the context
     app.add_middleware(RequestContextMiddleware)
 
-    @app.get("/health", tags=["meta"])
-    def health() -> dict:
-        return {"ok": True, "service": "leaseos-api", "version": "0.2.0"}
-
+    app.include_router(health_routes.router)
     app.include_router(leases_routes.router)
     app.include_router(events_routes.router)
     app.include_router(integrations_routes.router)

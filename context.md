@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-04 (after Backend-hardening Phase 2: structured logging with request IDs — every log line now correlated to the request that produced it)
+- Last updated: 2026-05-04 (after Backend-hardening Phase 3: real /healthz + /readyz with DB + storage + Anthropic-key checks)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -662,6 +662,30 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.13 Backend hardening — Phase 3: real /healthz + /readyz (landed 2026-05-04)
+
+Third chunk of the "proper backend" pass.
+
+**The distinction we needed:** until now `/health` returned `{"ok": true}` unconditionally. Render's healthcheck calls this — if we lie and the DB is actually down, Render keeps routing traffic to a broken instance and users get 500s. Two endpoints, two purposes:
+
+- **`/healthz` (liveness)** — process is up, event loop responsive, no external calls. Sub-millisecond. Render uses this for routing decisions; if it fails the orchestrator restarts the pod.
+- **`/readyz` (readiness)** — process AND every dep is healthy. Returns 503 if DB / storage / anthropic-key / secret-key check fails. Orchestrator stops routing traffic but doesn't restart (the dep itself may be flapping).
+
+**What landed:**
+- New `src/leaseos/api/routes/health.py` with both endpoints. Four checks on `/readyz`:
+  - **database** — real `SELECT 1` round-trip; catches connection-pool-exhausted, network partition, DB restart, wrong creds.
+  - **storage** — write-readback-delete a `.healthz-probe` key through the storage abstraction; catches IAM misconfig, bucket-doesn't-exist, network partition for the future S3 backend.
+  - **anthropic_key** — surface only (env var present + has `sk-ant-` prefix). Doesn't burn credit on a real call. Wrong-shape key = "degraded" not "down" because the API can still serve most endpoints (only extraction breaks).
+  - **secret_key** — `LEASEOS_SECRET_KEY` for at-rest encryption. In dev, a derived per-machine key is used so this is "skipped"; in prod, missing = "down".
+- Each check has a typed `CheckResult` with `status` (`ok | degraded | down | skipped`), `elapsed_ms`, optional `detail`. `degraded` is treated as still-ready (200); only `down` flips to 503.
+- Inline `/health` route removed from `main.create_app()`; `health_routes.router` includes a `/health` alias so the old DEPLOY.md and Render config keep working.
+- 8 new tests in `test_health.py` covering both endpoints, no-auth requirement, the down/degraded status logic, and a regression that `.healthz-probe` doesn't leak into `iter_prefix` listings.
+
+**Live verified:**
+- `GET /healthz` → 200 with the version blob.
+- `GET /readyz` → 200 with the four-check breakdown.
+- 149/149 backend tests passing.
 
 ### 9.4.12 Backend hardening — Phase 2: structured logging + request IDs (landed 2026-05-04)
 

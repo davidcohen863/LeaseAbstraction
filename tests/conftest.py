@@ -37,6 +37,17 @@ def _shared_memory_engine():
     )
 
 
+@pytest.fixture(autouse=True)
+def _reset_storage_cache_per_test():
+    """Storage backend is process-cached; tests that monkeypatch storage_dir
+    or LEASEOS_STORAGE_BACKEND need a fresh resolve. Cheap to do everywhere."""
+    from leaseos.api.storage import reset_storage_cache
+
+    reset_storage_cache()
+    yield
+    reset_storage_cache()
+
+
 @pytest.fixture
 def db_session() -> Iterator:
     """Fresh in-memory SQLite DB with all tables created. One per test."""

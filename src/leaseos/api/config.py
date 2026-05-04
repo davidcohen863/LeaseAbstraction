@@ -28,12 +28,19 @@ class Settings:
     )
 
     # File storage — local filesystem for dev, S3-compatible for prod.
+    # `storage_dir` is the historical "documents/" subdir; the storage abstraction
+    # in `storage.py` rebases on `storage_dir.parent` so packs/templates/documents
+    # all live as siblings under one root.
     storage_dir: Path = Path(
         os.getenv(
             "LEASEOS_STORAGE_DIR",
             str(Path(__file__).resolve().parents[3] / "data" / "documents"),
         )
     )
+    # Pick the storage backend. "local" = filesystem (dev + persistent-disk
+    # hosts), "s3" = S3 / R2 / equivalent (not implemented yet — interface
+    # in storage.py is ready). Default is local.
+    storage_backend: str = os.getenv("LEASEOS_STORAGE_BACKEND", "local")
 
     # Auth — Clerk
     clerk_jwks_url: str | None = os.getenv("CLERK_JWKS_URL")

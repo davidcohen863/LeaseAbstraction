@@ -27,10 +27,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import AuthenticatedUser, current_user
-from ..config import get_settings
 from ..db import get_db
 from ..models import PackDocumentKind
-from ..security import safe_filename, serve_inside_sandbox
+from ..security import safe_filename
+from ..storage import get_storage
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 
@@ -40,17 +40,31 @@ VALID_KINDS = {k.value for k in PackDocumentKind}
 # ---- helpers -------------------------------------------------------------
 
 
+def _template_key(kind: str) -> str:
+    if kind not in VALID_KINDS:
+        raise HTTPException(400, f"Unknown template kind {kind!r}. Valid: {sorted(VALID_KINDS)}")
+    return f"templates/{kind}.docx"
+
+
+def _sidecar_key(kind: str) -> str:
+    return f"templates/{kind}.docx.original-name"
+
+
+# Kept for tests that still reference these names — both now thin wrappers.
 def _templates_dir() -> Path:
-    settings = get_settings()
-    p = settings.storage_dir.parent / "templates"
+    """Deprecated: use storage_key + get_storage() instead. Returns the
+    on-disk dir for the LocalStorage backend so tests that need to drop
+    a file directly still work."""
+    from ..config import get_settings
+
+    p = get_settings().storage_dir.parent / "templates"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def _template_path(kind: str) -> Path:
-    if kind not in VALID_KINDS:
-        raise HTTPException(400, f"Unknown template kind {kind!r}. Valid: {sorted(VALID_KINDS)}")
-    return _templates_dir() / f"{kind}.docx"
+    """Deprecated: use _template_key()."""
+    return _templates_dir() / f"{_template_key(kind).split('/')[-1]}"
 
 
 # ---- response shapes -----------------------------------------------------
@@ -80,18 +94,24 @@ def list_templates(
     user: AuthenticatedUser = Depends(current_user),
 ) -> list[TemplateInfo]:
     """Status of every pack-document template, in canonical order."""
+    storage = get_storage()
     out: list[TemplateInfo] = []
     for kind in ("landlord_memo", "comparables_schedule", "itza_analysis", "trigger_letter"):
-        path = _template_path(kind)
-        if path.exists():
-            sidecar = path.with_suffix(".docx.original-name")
-            original = sidecar.read_text().strip() if sidecar.exists() else None
+        key = _template_key(kind)
+        size = storage.size(key)
+        if size is not None:
+            sidecar_key = _sidecar_key(kind)
+            original = (
+                storage.get(sidecar_key).decode().strip()
+                if storage.exists(sidecar_key)
+                else None
+            )
             out.append(
                 TemplateInfo(
                     kind=kind,
                     label=KIND_LABELS[kind],
                     uploaded=True,
-                    size_bytes=path.stat().st_size,
+                    size_bytes=size,
                     original_filename=original,
                 )
             )
@@ -108,7 +128,7 @@ async def upload_template(
     db: Session = Depends(get_db),
 ) -> TemplateInfo:
     """Replace the firm's template for `kind`. Accepts .docx only."""
-    path = _template_path(kind)  # validates kind
+    key = _template_key(kind)  # validates kind
     if not file.filename or not file.filename.lower().endswith(".docx"):
         raise HTTPException(400, "Template must be a .docx file")
 
@@ -125,11 +145,12 @@ async def upload_template(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, f"Couldn't parse as a Word document: {exc}") from exc
 
-    path.write_bytes(raw)
+    storage = get_storage()
+    storage.put(key, raw)
     # Store the original filename in a sidecar so the UI can show "uploaded
     # firm-style-memo-v3.docx" instead of just "landlord_memo.docx".
     safe = safe_filename(file.filename)
-    path.with_suffix(".docx.original-name").write_text(safe)
+    storage.put(_sidecar_key(kind), safe.encode())
 
     return TemplateInfo(
         kind=kind,
@@ -146,12 +167,10 @@ def delete_template(
     user: AuthenticatedUser = Depends(current_user),
 ) -> None:
     """Revert this kind to the LeaseOS default style."""
-    path = _template_path(kind)
-    if path.exists():
-        path.unlink()
-    sidecar = path.with_suffix(".docx.original-name")
-    if sidecar.exists():
-        sidecar.unlink()
+    key = _template_key(kind)
+    storage = get_storage()
+    storage.delete(key)
+    storage.delete(_sidecar_key(kind))
 
 
 @router.get("/{kind}/download")
@@ -160,13 +179,18 @@ def download_template(
     user: AuthenticatedUser = Depends(current_user),
 ):
     """Stream the current template back so the user can edit + re-upload."""
-    path = _template_path(kind)
-    if not path.exists():
+    key = _template_key(kind)
+    storage = get_storage()
+    if not storage.exists(key):
         raise HTTPException(404, f"No template uploaded for {kind!r}")
-    sidecar = path.with_suffix(".docx.original-name")
-    download_name = sidecar.read_text().strip() if sidecar.exists() else f"{kind}.docx"
-    return serve_inside_sandbox(
-        path,
+    sidecar_key = _sidecar_key(kind)
+    download_name = (
+        storage.get(sidecar_key).decode().strip()
+        if storage.exists(sidecar_key)
+        else f"{kind}.docx"
+    )
+    return storage.serve(
+        key,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=download_name,
+        download_filename=download_name,
     )

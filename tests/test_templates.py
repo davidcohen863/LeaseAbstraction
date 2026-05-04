@@ -61,9 +61,11 @@ class TestRouteContract:
     def test_upload_then_list_then_delete_round_trip(self, test_client, tmp_path, monkeypatch):
         # Point storage_dir at tmp so we don't touch the dev DB's data/
         from leaseos.api.config import get_settings
+        from leaseos.api.storage import reset_storage_cache
 
         settings = get_settings()
         monkeypatch.setattr(settings, "storage_dir", tmp_path / "documents")
+        reset_storage_cache()
 
         # 1. baseline: nothing uploaded
         r = test_client.get("/templates")
@@ -101,11 +103,27 @@ class TestRouteContract:
 
 
 class TestRenderDocxUsesTemplate:
-    def test_falls_back_to_default_when_no_template(self, tmp_path, monkeypatch):
+    def _patch_storage(self, monkeypatch, tmp_path):
+        """Point storage at a per-test temp dir + bust the storage cache.
+
+        The Storage backend is process-cached for performance, so monkeypatching
+        `settings.storage_dir` alone doesn't reroute writes — we have to clear
+        the cache so the next `get_storage()` re-reads the (patched) settings.
+        """
         from leaseos.api.config import get_settings
+        from leaseos.api.storage import reset_storage_cache
 
         settings = get_settings()
         monkeypatch.setattr(settings, "storage_dir", tmp_path / "documents")
+        reset_storage_cache()
+        monkeypatch.setattr(
+            "leaseos.api.storage._storage",
+            None,
+            raising=False,
+        )
+
+    def test_falls_back_to_default_when_no_template(self, tmp_path, monkeypatch):
+        self._patch_storage(monkeypatch, tmp_path)
         out = tmp_path / "out.docx"
         render_docx(
             kind="landlord_memo",
@@ -116,24 +134,19 @@ class TestRenderDocxUsesTemplate:
         assert out.exists()
 
     def test_uses_uploaded_template_as_base(self, tmp_path, monkeypatch):
-        from leaseos.api.config import get_settings
-
-        settings = get_settings()
-        monkeypatch.setattr(settings, "storage_dir", tmp_path / "documents")
-
-        # Drop a template that contains a unique marker string
-        templates_dir = _templates_dir()
-        template = templates_dir / "landlord_memo.docx"
-        marker = "ACME-LETTERHEAD-MARKER-9f2a"
-        DocxDocument().add_paragraph(marker)  # noqa
+        self._patch_storage(monkeypatch, tmp_path)
         from docx import Document as DocxDocument2
 
-        doc = DocxDocument2()
-        doc.add_paragraph(marker)
-        doc.save(str(template))
+        # Drop a template via the storage layer (the real prod write path)
+        from leaseos.api.storage import get_storage
+        from io import BytesIO
 
-        # Sanity: render finds the template
-        assert _firm_template_path("landlord_memo") == template
+        marker = "ACME-LETTERHEAD-MARKER-9f2a"
+        buf = BytesIO()
+        d = DocxDocument2()
+        d.add_paragraph(marker)
+        d.save(buf)
+        get_storage().put("templates/landlord_memo.docx", buf.getvalue())
 
         # Render new content — output should contain BOTH the marker and the new content
         out = tmp_path / "out.docx"
@@ -152,16 +165,18 @@ class TestRenderDocxUsesTemplate:
 
     def test_template_only_used_for_matching_kind(self, tmp_path, monkeypatch):
         # Uploading a landlord_memo template must NOT change trigger_letter renders.
-        from leaseos.api.config import get_settings
         from docx import Document as DocxDocument2
+        from io import BytesIO
 
-        settings = get_settings()
-        monkeypatch.setattr(settings, "storage_dir", tmp_path / "documents")
-        templates_dir = _templates_dir()
+        self._patch_storage(monkeypatch, tmp_path)
+        from leaseos.api.storage import get_storage
+
         marker = "MEMO-ONLY-MARKER"
-        doc = DocxDocument2()
-        doc.add_paragraph(marker)
-        doc.save(str(templates_dir / "landlord_memo.docx"))
+        buf = BytesIO()
+        d = DocxDocument2()
+        d.add_paragraph(marker)
+        d.save(buf)
+        get_storage().put("templates/landlord_memo.docx", buf.getvalue())
 
         out = tmp_path / "letter.docx"
         render_docx(

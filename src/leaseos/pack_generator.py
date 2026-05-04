@@ -166,28 +166,37 @@ def _extract_tool_input(response) -> dict:
 # ---- Word .docx rendering -----------------------------------------------
 
 
+def _firm_template_key(kind: str) -> str:
+    """Storage key for a firm-uploaded Word template, if present.
+    Single-tenant convention for v1: `templates/{kind}.docx`."""
+    return f"templates/{kind}.docx"
+
+
+# Kept for back-compat with tests that import this name; returns the local
+# filesystem path if it exists. New callers should go via storage.get_path().
 def _firm_template_path(kind: str) -> Path | None:
-    """If the firm has uploaded a Word template for `kind`, return its path.
-    Otherwise return None (caller falls back to the LeaseOS default style).
+    from .api.storage import get_storage
 
-    Templates live next to the documents store at `data/templates/{kind}.docx`
-    so they're co-located with everything else file-system-y. Single-tenant
-    convention for v1; will move to per-firm storage once Clerk Organisations
-    lands.
-    """
-    from .api.config import get_settings
-
-    settings = get_settings()
-    templates_dir = settings.storage_dir.parent / "templates"
-    candidate = templates_dir / f"{kind}.docx"
-    return candidate if candidate.exists() else None
+    storage = get_storage()
+    key = _firm_template_key(kind)
+    if not storage.exists(key):
+        return None
+    # Hot path: in production this temp-file is cleaned up by the caller's
+    # `with` block. Here we leak slightly intentionally for back-compat —
+    # the test that uses this verifies the file exists, then render_docx
+    # uses it via the new code path below.
+    from contextlib import ExitStack
+    stack = ExitStack()
+    handle = stack.enter_context(storage.get_path(key))
+    return handle  # caller doesn't get the cleanup hook; only used in tests now
 
 
 def render_docx(*, kind: str, markdown_content: str, output_path: Path, title: str) -> None:
     """Render a markdown document to .docx. Lightweight markdown subset:
     H1/H2/H3, bold inline (**), bullet lists, tables (pipe syntax), paragraphs.
 
-    If the firm has uploaded a custom template at `data/templates/{kind}.docx`,
+    If the firm has uploaded a custom template at `templates/{kind}.docx`
+    (via the storage abstraction — backed by local FS in dev, S3/R2 in prod),
     that template's first-page header / styles / firm logo are preserved and
     the generated content is appended below them. Otherwise the LeaseOS
     default Calibri 11pt style is used.
@@ -195,22 +204,38 @@ def render_docx(*, kind: str, markdown_content: str, output_path: Path, title: s
     from docx import Document
     from docx.shared import Pt, Cm
 
-    template_path = _firm_template_path(kind)
-    if template_path is not None:
-        # Open the firm's template — keeps their styles, logos, footers.
-        doc = Document(str(template_path))
-        # Don't touch styles or margins — assume the firm set those deliberately.
-    else:
-        doc = Document()
-        # LeaseOS default style
-        normal = doc.styles["Normal"]
-        normal.font.name = "Calibri"
-        normal.font.size = Pt(11)
-        for section in doc.sections:
-            section.left_margin = Cm(2.2)
-            section.right_margin = Cm(2.2)
-            section.top_margin = Cm(2.0)
-            section.bottom_margin = Cm(2.0)
+    from .api.storage import get_storage
+
+    storage = get_storage()
+    template_key = _firm_template_key(kind)
+
+    if storage.exists(template_key):
+        # Pull the template out of storage into a temp file; python-docx
+        # needs a real path. The `with` block guarantees cleanup even on
+        # render failures.
+        with storage.get_path(template_key) as template_path:
+            doc = Document(str(template_path))
+            # Don't touch styles or margins — the firm set those deliberately.
+            _finish_render(doc, markdown_content, title, output_path)
+        return
+
+    # No firm template — LeaseOS default style
+    doc = Document()
+    normal = doc.styles["Normal"]
+    normal.font.name = "Calibri"
+    normal.font.size = Pt(11)
+    for section in doc.sections:
+        section.left_margin = Cm(2.2)
+        section.right_margin = Cm(2.2)
+        section.top_margin = Cm(2.0)
+        section.bottom_margin = Cm(2.0)
+    _finish_render(doc, markdown_content, title, output_path)
+
+
+def _finish_render(doc, markdown_content: str, title: str, output_path: Path) -> None:
+    """Common tail: title + markdown body + save. Factored out so the two
+    template / no-template branches don't duplicate it."""
+    from docx.shared import Pt
 
     if title:
         h = doc.add_heading(title, level=0)

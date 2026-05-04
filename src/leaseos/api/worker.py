@@ -19,12 +19,18 @@ from ..utils import utc_now
 from .db import SessionLocal
 from .events import derive_events
 from .models import Document, Lease, LeaseEvent, LeaseStatus, Property, normalise_address
+from .storage import coerce_to_key, get_storage
 
 log = logging.getLogger(__name__)
 
 
-def run_extraction(lease_id: str, pdf_path: str) -> None:
-    """Extract a lease, persist the record, derive events. Called as a background task."""
+def run_extraction(lease_id: str, pdf_storage_key: str) -> None:
+    """Extract a lease, persist the record, derive events. Called as a
+    background task. `pdf_storage_key` is a logical storage key (e.g.
+    "documents/<lease_id>__file.pdf"), resolved via `get_storage().get_path()`
+    so the worker stays oblivious to whether the file lives on local disk
+    or in a remote bucket.
+    """
     db: Session = SessionLocal()
     try:
         lease = db.get(Lease, lease_id)
@@ -36,9 +42,10 @@ def run_extraction(lease_id: str, pdf_path: str) -> None:
         db.commit()
 
         try:
-            pdf = load_pdf(Path(pdf_path))
-            # Two-pass: pays ~1.3-1.5x of single-pass cost; calibrates confidence.
-            result = extract_two_pass(pdf)
+            with get_storage().get_path(coerce_to_key(pdf_storage_key)) as pdf_path:
+                pdf = load_pdf(pdf_path)
+                # Two-pass: pays ~1.3-1.5x of single-pass cost; calibrates confidence.
+                result = extract_two_pass(pdf)
         except Exception as exc:  # noqa: BLE001
             log.exception("Extraction failed for lease %s", lease_id)
             lease.status = LeaseStatus.FAILED.value
@@ -92,7 +99,8 @@ def run_ancillary_summary(document_id: str) -> None:
         db.commit()
 
         try:
-            pdf = load_pdf(Path(doc.storage_path))
+            with get_storage().get_path(coerce_to_key(doc.storage_path)) as pdf_path:
+                pdf = load_pdf(pdf_path)
             # Build a brief context summary from the parent lease record
             lease = db.get(Lease, doc.lease_id)
             parent_summary: str | None = None

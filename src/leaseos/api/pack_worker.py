@@ -112,10 +112,14 @@ def run_pack_generation(pack_id: str) -> None:
         pack.generated_seconds = round(result.elapsed_seconds, 2)
         pack.status = PackStatus.DRAFT.value
 
-        # Render and persist each document
-        settings = get_settings()
-        pack_dir = settings.storage_dir.parent / "packs" / pack.id
-        pack_dir.mkdir(parents=True, exist_ok=True)
+        # Render each document into a tempfile then upload via storage.
+        # Storage abstraction lets the cloud deploy keep generated packs
+        # alongside the rest of the bucket without code changes here.
+        import tempfile
+
+        from .storage import get_storage
+
+        storage = get_storage()
 
         # Replace any pre-existing documents (idempotent on re-run)
         db.query(PackDocument).filter(PackDocument.pack_id == pack.id).delete()
@@ -123,14 +127,22 @@ def run_pack_generation(pack_id: str) -> None:
         for kind, attr, title in DOC_KIND_MAP:
             md_text = getattr(out, attr) or ""
             filename = f"{kind.value}.docx"
-            path = pack_dir / filename
+            storage_key = f"packs/{pack.id}/{filename}"
             try:
-                render_docx(
-                    kind=kind.value,
-                    markdown_content=md_text,
-                    output_path=path,
-                    title=title,
-                )
+                # python-docx requires a real path; render to a temp file
+                # then read bytes back and write through storage.
+                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+                    tmp_path = Path(tmp.name)
+                try:
+                    render_docx(
+                        kind=kind.value,
+                        markdown_content=md_text,
+                        output_path=tmp_path,
+                        title=title,
+                    )
+                    storage.put(storage_key, tmp_path.read_bytes())
+                finally:
+                    tmp_path.unlink(missing_ok=True)
             except Exception as exc:  # noqa: BLE001
                 log.warning("Failed to render %s for pack %s: %s", kind.value, pack.id, exc)
             db.add(
@@ -138,7 +150,7 @@ def run_pack_generation(pack_id: str) -> None:
                     pack_id=pack.id,
                     kind=kind.value,
                     filename=filename,
-                    storage_path=str(path),
+                    storage_path=storage_key,
                     markdown_content=md_text,
                 )
             )

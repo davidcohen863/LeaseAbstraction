@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-04 (after P2.2 CRUD + UX polish: DELETE/rename for lease/pack/property, toast + confirm-dialog systems, row-action menus, inline rename)
+- Last updated: 2026-05-04 (after Backend-hardening Phase 1: storage abstraction so files no longer pinned to localhost — interface ready for S3/R2 in prod)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -662,6 +662,28 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.11 Backend hardening — Phase 1: storage abstraction (landed 2026-05-04)
+
+First chunk of the "proper backend" pass. The work is staged across multiple commits because each phase is independently verifiable; this commit is just the storage layer.
+
+**The problem:** every uploaded PDF, generated `.docx`, and firm-uploaded Word template lived in `data/` on the developer's laptop. Direct fs writes scattered across `routes/leases.py`, `routes/templates.py`, `pack_worker.py`, `worker.py`, `pack_generator.py`, `security.py`. Any cloud deploy without persistent disk (Render web service, Fly hobby, Vercel functions) would lose every uploaded file on each restart.
+
+**What landed:**
+- New `src/leaseos/api/storage.py` — `Storage` Protocol + `LocalStorage` implementation. The five operations every backend has to do: `put`, `get`, `exists`, `delete`, `iter_prefix` + `size` + `serve` + a `get_path(key)` context manager for libraries that genuinely need a real path (PyMuPDF, python-docx). On local backend `get_path` yields the actual file; on a future S3 backend it'll download to a temp file and clean up on context exit.
+- `LEASEOS_STORAGE_BACKEND` env var (`local` default; `s3` raises `NotImplementedError` for now — interface is ready, will land alongside the first cloud deploy).
+- Logical key namespace: `documents/{lease_id}__{filename}.pdf`, `packs/{pack_id}/{kind}.docx`, `templates/{kind}.docx`, `templates/{kind}.docx.original-name`.
+- Backwards-compat shim `coerce_to_key()` so existing DB rows that have absolute filesystem paths in `Document.storage_path` resolve through the new layer without a migration.
+- All five call sites refactored: lease upload, side-letter attach, lease serve, lease delete (cleans documents + pack dirs), pack delete, pack worker (renders to temp + uploads via `storage.put`), extraction worker (`get_path` ctx for `load_pdf`), template upload/list/delete/download, `pack_generator._firm_template_path` → uses `storage.get_path` so packs preserve firm letterhead even when storage is remote.
+- New `Storage.size(key) -> int | None` for cheap stat (local: `os.stat`; future S3: `HEAD`).
+- Test infra: new autouse `_reset_storage_cache_per_test` fixture in `conftest.py`. Tests that monkeypatch `settings.storage_dir` now correctly bust the storage singleton. Three template tests rewritten to write through `get_storage().put(...)` (the actual prod path) instead of dropping files into `_templates_dir()` directly.
+
+**Verification:**
+- 135/135 backend tests passing.
+- Live verification on the dev DB: legacy absolute-path rows still resolve via `coerce_to_key`.
+- API still serves the existing seeded lease + pack documents via the tunnel.
+
+**Next phases (separate commits):** structured logging with request IDs → real `/healthz` + `/readyz` → rate limiting → idempotency keys → auth-enforcement audit → optional Sentry.
 
 ### 9.4.10 P2.2 CRUD + UX polish (landed 2026-05-04)
 

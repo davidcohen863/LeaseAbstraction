@@ -24,7 +24,7 @@ from ..models import (
     RentReviewPack,
 )
 from ..pack_worker import run_pack_generation
-from ..security import serve_inside_sandbox
+from ..storage import coerce_to_key, get_storage
 from ...utils import utc_now
 
 router = APIRouter(tags=["packs"])
@@ -258,10 +258,10 @@ def download_document(
     doc = db.get(PackDocument, doc_id)
     if doc is None or doc.pack_id != pack_id:
         raise HTTPException(404, "Document not found")
-    return serve_inside_sandbox(
-        Path(doc.storage_path),
+    return get_storage().serve(
+        coerce_to_key(doc.storage_path),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=doc.filename,
+        download_filename=doc.filename,
     )
 
 
@@ -313,21 +313,14 @@ def delete_pack(
             "comparables and the audit trail. Re-open / re-generate instead.",
         )
 
-    # Snapshot file paths before SQLAlchemy deletes the rows
-    from ..config import get_settings as _get_settings
-    settings = _get_settings()
-    pack_dir = settings.storage_dir.parent / "packs" / pack.id
+    # Snapshot the storage prefix before SQLAlchemy deletes the rows
+    pack_prefix = f"packs/{pack.id}"
 
     db.delete(pack)
     db.commit()
 
-    if pack_dir.exists():
-        try:
-            for f in pack_dir.iterdir():
-                f.unlink()
-            pack_dir.rmdir()
-        except OSError:
-            pass  # leave for housekeeping if something went wrong
+    # Tree-delete the pack's directory of generated .docx files
+    get_storage().delete(pack_prefix)
 
 
 @router.post("/packs/{pack_id}/sent", response_model=PackSummary)

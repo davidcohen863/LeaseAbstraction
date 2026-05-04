@@ -12,11 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from ..auth import AuthenticatedUser, current_user
-from ..config import get_settings
 from ..db import get_db
 from ..models import Document, FieldEdit, Lease, LeaseStatus
 from ..security import safe_filename as _safe_filename
-from ..security import serve_inside_sandbox as _serve_inside_sandbox
+from ..storage import coerce_to_key, get_storage
 from ..worker import run_extraction
 from ...utils import utc_now
 
@@ -74,9 +73,6 @@ async def upload_lease(
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF uploads are accepted")
 
-    settings = get_settings()
-    settings.storage_dir.mkdir(parents=True, exist_ok=True)
-
     raw = await file.read()
     sha = hashlib.sha256(raw).hexdigest()
     safe_name = _safe_filename(file.filename)
@@ -89,13 +85,15 @@ async def upload_lease(
     db.add(lease)
     db.flush()
 
-    storage_path = settings.storage_dir / f"{lease.id}__{safe_name}"
-    storage_path.write_bytes(raw)
+    # Storage key is the canonical identifier — backend (local FS today,
+    # S3/R2 tomorrow) decides where it actually lands.
+    storage_key = f"documents/{lease.id}__{safe_name}"
+    get_storage().put(storage_key, raw)
 
     document = Document(
         lease_id=lease.id,
         filename=safe_name,
-        storage_path=str(storage_path),
+        storage_path=storage_key,  # logical key, not a path on disk
         sha256=sha,
         size_bytes=len(raw),
     )
@@ -103,7 +101,7 @@ async def upload_lease(
     db.commit()
     db.refresh(lease)
 
-    background.add_task(run_extraction, lease.id, str(storage_path))
+    background.add_task(run_extraction, lease.id, storage_key)
 
     return _to_summary(lease, document_count=1)
 
@@ -181,8 +179,10 @@ def get_document(
         raise HTTPException(404, "Lease or document not found")
     # Prefer a role='lease' doc, fall back to the first
     doc = next((d for d in lease.documents if d.role == "lease"), lease.documents[0])
-    return _serve_inside_sandbox(
-        Path(doc.storage_path), media_type="application/pdf", filename=doc.filename
+    return get_storage().serve(
+        coerce_to_key(doc.storage_path),
+        media_type="application/pdf",
+        download_filename=doc.filename,
     )
 
 
@@ -200,8 +200,10 @@ def get_lease_document_by_id(
     doc = next((d for d in lease.documents if d.id == document_id), None)
     if doc is None:
         raise HTTPException(404, "Document not found")
-    return _serve_inside_sandbox(
-        Path(doc.storage_path), media_type="application/pdf", filename=doc.filename
+    return get_storage().serve(
+        coerce_to_key(doc.storage_path),
+        media_type="application/pdf",
+        download_filename=doc.filename,
     )
 
 
@@ -229,23 +231,21 @@ async def attach_document(
     if lease is None:
         raise HTTPException(404, "Lease not found")
 
-    settings = get_settings()
-    settings.storage_dir.mkdir(parents=True, exist_ok=True)
     raw = await file.read()
     sha = hashlib.sha256(raw).hexdigest()
     safe_name = _safe_filename(file.filename)
 
-    # Use a UUID prefix to avoid collisions on the disk
+    # UUID prefix avoids collisions if two side-letters share a filename
     import uuid as _uuid
-    storage_path = settings.storage_dir / f"{_uuid.uuid4()}__{safe_name}"
-    storage_path.write_bytes(raw)
+    storage_key = f"documents/{_uuid.uuid4()}__{safe_name}"
+    get_storage().put(storage_key, raw)
 
     from ..worker import run_ancillary_summary
 
     doc = Document(
         lease_id=lease.id,
         filename=safe_name,
-        storage_path=str(storage_path),
+        storage_path=storage_key,
         role=role,
         sha256=sha,
         size_bytes=len(raw),
@@ -403,15 +403,9 @@ def delete_lease(
     if lease is None:
         raise HTTPException(404, "Lease not found")
 
-    # Snapshot file paths before SQLAlchemy deletes the rows
-    document_paths = [Path(d.storage_path) for d in lease.documents]
-    pack_dirs: list[Path] = []
-    settings = get_settings()
-    packs_root = settings.storage_dir.parent / "packs"
-    for pack in lease.packs:
-        pack_dir = packs_root / pack.id
-        if pack_dir.exists():
-            pack_dirs.append(pack_dir)
+    # Snapshot storage keys before SQLAlchemy deletes the rows
+    document_keys = [coerce_to_key(d.storage_path) for d in lease.documents]
+    pack_keys = [f"packs/{p.id}" for p in lease.packs]
 
     # Null out derived_from_lease_id on any internal Comparables so the FK
     # doesn't block the delete. We import here to avoid a circular import.
@@ -428,21 +422,13 @@ def delete_lease(
     db.delete(lease)
     db.commit()
 
-    # Clean up filesystem AFTER the DB commit succeeds — if the commit fails,
+    # Clean up storage AFTER the DB commit succeeds — if the commit fails,
     # the files survive and the lease is still usable.
-    for path in document_paths:
-        try:
-            if path.exists():
-                path.unlink()
-        except OSError:
-            pass  # best-effort; periodic disk-housekeeping job will catch leftovers
-    for pack_dir in pack_dirs:
-        try:
-            for f in pack_dir.iterdir():
-                f.unlink()
-            pack_dir.rmdir()
-        except OSError:
-            pass
+    storage = get_storage()
+    for key in document_keys:
+        storage.delete(key)
+    for key in pack_keys:
+        storage.delete(key)  # tree delete (LocalStorage handles dirs)
 
 
 @router.post("/{lease_id}/approve", response_model=LeaseDetail)

@@ -61,6 +61,24 @@ def _disable_rate_limiting():
     limiter.enabled = False
 
 
+@pytest.fixture(autouse=True)
+def _stub_background_workers(monkeypatch):
+    """Background tasks (run_extraction, run_pack_generation, run_ancillary_summary)
+    open a fresh SessionLocal() that points at the production engine, NOT the
+    test's overridden in-memory DB. They'd fail with `no such table: leases`
+    on every test that exercises POST /leases or POST /events/.../pack.
+
+    Tests that genuinely care about the worker behaviour patch these directly
+    in their own scope; everywhere else, no-op them so the route's sync 201
+    response is what's exercised."""
+    monkeypatch.setattr("leaseos.api.routes.leases.run_extraction", lambda *a, **kw: None)
+    # `run_ancillary_summary` is imported inside the route function on attach;
+    # patch the source module so the late-binding import gets the no-op.
+    monkeypatch.setattr("leaseos.api.worker.run_ancillary_summary", lambda *a, **kw: None)
+    monkeypatch.setattr("leaseos.api.routes.packs.run_pack_generation", lambda *a, **kw: None)
+    yield
+
+
 @pytest.fixture
 def db_session() -> Iterator:
     """Fresh in-memory SQLite DB with all tables created. One per test."""

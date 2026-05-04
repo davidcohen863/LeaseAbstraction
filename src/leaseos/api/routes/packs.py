@@ -23,6 +23,7 @@ from ..models import (
     PackStatus,
     RentReviewPack,
 )
+from ..idempotency import idempotent
 from ..pack_worker import run_pack_generation
 from ..rate_limit import limiter
 from ..storage import coerce_to_key, get_storage
@@ -191,30 +192,34 @@ def auto_trigger_packs(
 
 @router.post("/events/{event_id}/pack", response_model=PackSummary, status_code=201)
 @limiter.limit("10/minute")  # cost-bearing: triggers Anthropic pack generation
-def generate_for_event(
+async def generate_for_event(
     request: Request,
     event_id: str,
     background: BackgroundTasks,
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
-) -> PackSummary:
+):
     event = db.get(LeaseEvent, event_id)
     if event is None:
         raise HTTPException(404, "Event not found")
 
-    pack = RentReviewPack(
-        lease_id=event.lease_id,
-        lease_event_id=event.id,
-        status=PackStatus.GENERATING.value,
-    )
-    db.add(pack)
-    db.commit()
-    db.refresh(pack)
+    def _do_generate() -> PackSummary:
+        pack = RentReviewPack(
+            lease_id=event.lease_id,
+            lease_event_id=event.id,
+            status=PackStatus.GENERATING.value,
+        )
+        db.add(pack)
+        db.commit()
+        db.refresh(pack)
 
-    background.add_task(run_pack_generation, pack.id)
+        background.add_task(run_pack_generation, pack.id)
 
-    lease = db.get(Lease, pack.lease_id)
-    return _summary(pack, lease.label if lease else None)
+        lease = db.get(Lease, pack.lease_id)
+        return _summary(pack, lease.label if lease else None)
+
+    # Hash the event_id — same Idempotency-Key + same event = same response.
+    return await idempotent(request, _do_generate, request_hash=event_id)
 
 
 @router.get("/packs", response_model=list[PackSummary])

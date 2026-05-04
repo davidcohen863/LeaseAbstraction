@@ -50,7 +50,11 @@ def _user_or_ip_key(request: Request) -> str:
 # Global limiter — attached to the FastAPI app in main.create_app().
 # Limits are declared per-route via the `@limiter.limit(...)` decorator on
 # each endpoint, NOT here, so each route can pick its own quota.
-limiter = Limiter(key_func=_user_or_ip_key, headers_enabled=True)
+#
+# headers_enabled=False because slowapi tries to mutate a Response object
+# that isn't passed to handlers returning a Pydantic model directly. The
+# 429 handler still sets Retry-After explicitly so clients can back off.
+limiter = Limiter(key_func=_user_or_ip_key, headers_enabled=False)
 
 
 def install_rate_limit(app) -> None:

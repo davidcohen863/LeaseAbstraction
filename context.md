@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-04 (after Backend-hardening Phase 4: slowapi rate limiting on cost-bearing endpoints — protects the Anthropic budget)
+- Last updated: 2026-05-04 (after Backend-hardening Phase 5: Idempotency-Key support — accidental double-uploads return cached response, conflicting reuse returns 409)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -662,6 +662,28 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.15 Backend hardening — Phase 5: Idempotency-Key support (landed 2026-05-04)
+
+Fifth chunk of the "proper backend" pass.
+
+**The bug it prevents:** every webapp's classic disaster — user clicks Submit, network blip drops the response, browser retries, server processes the request twice. For LeaseOS that means two duplicate Lease rows, two extractions running, two Anthropic charges. Idempotency-Key is the standard fix (Stripe-style).
+
+**What landed:**
+- New `src/leaseos/api/idempotency.py` — `idempotent(request, do_work, *, request_hash)` async wrapper. Looks up the inbound `Idempotency-Key` header in storage; if cached + same `request_hash` → returns the cached response with `Idempotent-Replayed: true` header; if cached + different `request_hash` → 409 Conflict; if no header → pass-through (header is opt-in).
+- Storage: cache lives at `idempotency/{key}.json` via the existing storage abstraction. No new DB table or migration. 24h TTL (matches Stripe).
+- Wrapped `POST /leases` (request_hash = sha256 of file bytes) and `POST /events/{event_id}/pack` (request_hash = event_id).
+- Key sanitisation rejects non-ASCII / non-alnum characters so a malicious key can't escape the `idempotency/` storage prefix.
+- 4 new tests covering: no-header pass-through, same-key replay returning the same lease id + replay header, same-key-different-body 409, path-traversal sanitisation.
+
+**Test infra:**
+- New autouse `_stub_background_workers` fixture in `conftest.py` that monkey-patches `run_extraction`, `run_ancillary_summary`, `run_pack_generation` to no-ops. Background tasks open a fresh `SessionLocal()` that points at the production engine, NOT the test's overridden in-memory DB; without the stub, every test that POSTed to `/leases` would error out in the captured stderr with `no such table: leases`. Tests that genuinely care about worker behaviour (`test_destructive`, etc.) override these directly.
+
+**One slowapi gotcha resolved:** slowapi's `@limiter.limit(...)` defaults to injecting `X-RateLimit-*` headers via mutating a Response object — but FastAPI handlers that return Pydantic models don't expose one to slowapi. Switched `Limiter(headers_enabled=False)`. The 429 handler still sets `Retry-After` explicitly so well-behaved clients can back off; we just don't get the per-request header injection. Worth it for the simpler route signatures.
+
+**Live verified:** 1st POST → 201, 2nd POST same key → 201 with `Idempotent-Replayed: true`, 3rd POST same key but different file bytes → 409.
+
+155/155 backend tests passing.
 
 ### 9.4.14 Backend hardening — Phase 4: rate limiting (landed 2026-05-04)
 

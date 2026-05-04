@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..auth import AuthenticatedUser, current_user
 from ..db import get_db
+from ..idempotency import idempotent
 from ..models import Document, FieldEdit, Lease, LeaseStatus
 from ..rate_limit import limiter
 from ..security import safe_filename as _safe_filename
@@ -72,7 +73,7 @@ async def upload_lease(
     label: str | None = Form(default=None),
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
-) -> LeaseSummary:
+):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF uploads are accepted")
 
@@ -80,33 +81,40 @@ async def upload_lease(
     sha = hashlib.sha256(raw).hexdigest()
     safe_name = _safe_filename(file.filename)
 
-    lease = Lease(
-        label=label or safe_name,
-        status=LeaseStatus.UPLOADED.value,
-        assigned_user_id=user.id,
-    )
-    db.add(lease)
-    db.flush()
+    def _do_upload() -> LeaseSummary:
+        """Idempotent body — wrapped via the Idempotency-Key helper. If the
+        client retries with the same Idempotency-Key + same file bytes,
+        they get back the same LeaseSummary instead of a duplicate Lease."""
+        lease = Lease(
+            label=label or safe_name,
+            status=LeaseStatus.UPLOADED.value,
+            assigned_user_id=user.id,
+        )
+        db.add(lease)
+        db.flush()
 
-    # Storage key is the canonical identifier — backend (local FS today,
-    # S3/R2 tomorrow) decides where it actually lands.
-    storage_key = f"documents/{lease.id}__{safe_name}"
-    get_storage().put(storage_key, raw)
+        # Storage key is the canonical identifier — backend (local FS today,
+        # S3/R2 tomorrow) decides where it actually lands.
+        storage_key = f"documents/{lease.id}__{safe_name}"
+        get_storage().put(storage_key, raw)
 
-    document = Document(
-        lease_id=lease.id,
-        filename=safe_name,
-        storage_path=storage_key,  # logical key, not a path on disk
-        sha256=sha,
-        size_bytes=len(raw),
-    )
-    db.add(document)
-    db.commit()
-    db.refresh(lease)
+        document = Document(
+            lease_id=lease.id,
+            filename=safe_name,
+            storage_path=storage_key,
+            sha256=sha,
+            size_bytes=len(raw),
+        )
+        db.add(document)
+        db.commit()
+        db.refresh(lease)
 
-    background.add_task(run_extraction, lease.id, storage_key)
+        background.add_task(run_extraction, lease.id, storage_key)
+        return _to_summary(lease, document_count=1)
 
-    return _to_summary(lease, document_count=1)
+    # `request_hash` keys on the file SHA so an Idempotency-Key reused with
+    # a different file body is a 409 Conflict, not a silent stale-replay.
+    return await idempotent(request, _do_upload, request_hash=sha)
 
 
 @router.get("", response_model=list[LeaseSummary])

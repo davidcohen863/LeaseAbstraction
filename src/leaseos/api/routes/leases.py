@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..auth import AuthenticatedUser, current_user
 from ..db import get_db
 from ..models import Document, FieldEdit, Lease, LeaseStatus
+from ..rate_limit import limiter
 from ..security import safe_filename as _safe_filename
 from ..storage import coerce_to_key, get_storage
 from ..worker import run_extraction
@@ -63,7 +64,9 @@ class FieldPatch(BaseModel):
 
 
 @router.post("", response_model=LeaseSummary, status_code=201)
+@limiter.limit("10/minute")  # cost-bearing: triggers Anthropic extraction
 async def upload_lease(
+    request: Request,
     background: BackgroundTasks,
     file: UploadFile = File(...),
     label: str | None = Form(default=None),
@@ -208,7 +211,9 @@ def get_lease_document_by_id(
 
 
 @router.post("/{lease_id}/documents", response_model=DocumentOut, status_code=201)
+@limiter.limit("20/minute")  # cost-bearing: triggers ancillary AI summary
 async def attach_document(
+    request: Request,
     lease_id: str,
     background: BackgroundTasks,
     file: UploadFile = File(...),

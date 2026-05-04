@@ -18,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .config import get_settings
 from .db import init_db
 from .logging import setup_logging
+from .rate_limit import install_rate_limit
 from .request_context import RequestContextMiddleware
 from .routes import audit as audit_routes
 from .routes import comparables as comparables_routes
@@ -112,6 +113,9 @@ def create_app() -> FastAPI:
     )
     # Outermost — every other middleware sees a request_id in the context
     app.add_middleware(RequestContextMiddleware)
+    # Rate limiter — registers app.state.limiter and the 429 handler so any
+    # route decorated with `@limiter.limit(...)` is enforced.
+    install_rate_limit(app)
 
     app.include_router(health_routes.router)
     app.include_router(leases_routes.router)

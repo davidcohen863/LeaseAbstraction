@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from ..models import (
     RentReviewPack,
 )
 from ..pack_worker import run_pack_generation
+from ..rate_limit import limiter
 from ..storage import coerce_to_key, get_storage
 from ...utils import utc_now
 
@@ -125,7 +126,9 @@ class AutoTriggerResult(BaseModel):
 
 
 @router.post("/packs/auto-trigger", response_model=AutoTriggerResult, status_code=202, tags=["packs"])
+@limiter.limit("3/minute")  # cost-bearing: queues N parallel Anthropic calls
 def auto_trigger_packs(
+    request: Request,
     background: BackgroundTasks,
     days_ahead: int = Query(default=180, ge=1, le=365),
     dry_run: bool = Query(default=False),
@@ -187,7 +190,9 @@ def auto_trigger_packs(
 
 
 @router.post("/events/{event_id}/pack", response_model=PackSummary, status_code=201)
+@limiter.limit("10/minute")  # cost-bearing: triggers Anthropic pack generation
 def generate_for_event(
+    request: Request,
     event_id: str,
     background: BackgroundTasks,
     user: AuthenticatedUser = Depends(current_user),

@@ -48,6 +48,19 @@ def _reset_storage_cache_per_test():
     reset_storage_cache()
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limiting():
+    """Rate limiter uses in-process MemoryStorage that persists across tests.
+    Cumulative test calls on cost-bearing endpoints would otherwise trip 429
+    halfway through the suite. Disable for the whole test session — there's
+    a dedicated test_rate_limit.py that flips it back on for its own asserts."""
+    from leaseos.api.rate_limit import limiter
+
+    limiter.enabled = False
+    yield
+    limiter.enabled = False
+
+
 @pytest.fixture
 def db_session() -> Iterator:
     """Fresh in-memory SQLite DB with all tables created. One per test."""

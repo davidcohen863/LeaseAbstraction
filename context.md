@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-04 (after Backend-hardening Phase 3: real /healthz + /readyz with DB + storage + Anthropic-key checks)
+- Last updated: 2026-05-04 (after Backend-hardening Phase 4: slowapi rate limiting on cost-bearing endpoints — protects the Anthropic budget)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -662,6 +662,28 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.14 Backend hardening — Phase 4: rate limiting (landed 2026-05-04)
+
+Fourth chunk of the "proper backend" pass.
+
+**The risk:** every cost-bearing endpoint (`POST /leases`, `POST /leases/{id}/documents`, `POST /events/{id}/pack`, `POST /packs/auto-trigger`) calls Anthropic and burns real money. Without limits, anyone with the API URL — accidental script, leaked demo URL, malicious actor, runaway frontend bug — could drain the Anthropic account in minutes.
+
+**What landed:**
+- New `src/leaseos/api/rate_limit.py` — wraps slowapi. `Limiter(key_func=_user_or_ip_key)` keys per-user when authenticated (so one Sarah's stuck refresh button doesn't outpace the rest of the firm) and per-IP otherwise (catches unauthenticated abuse before we even check who they are). Buckets are prefixed `user:` / `ip:` so the same machine can't double-dip across auth states.
+- `install_rate_limit(app)` registers the limiter + a custom 429 handler that returns `{"detail": "Rate limit exceeded: ...", "retry_after_seconds": N}` AND sets a `Retry-After` header so well-behaved clients can back off.
+- Limits applied per route via `@limiter.limit(...)`:
+  - `POST /leases` → 10/minute (full extraction; ~£0.20 each)
+  - `POST /leases/{id}/documents` → 20/minute (ancillary summary; ~£0.05 each)
+  - `POST /events/{id}/pack` → 10/minute (pack generation; ~£0.20 each)
+  - `POST /packs/auto-trigger` → 3/minute (queues N parallel calls; safest to throttle hard)
+- Read endpoints intentionally unlimited — Sarah refreshing /leases doesn't cost us anything.
+- New dep: `slowapi>=0.1.9`. In-memory `MemoryStorage` (fine for single-pod Render). When we scale to multiple workers, swap to Redis via `storage_uri="redis://..."` — the rest of the API is identical.
+- Test infra: new autouse `_disable_rate_limiting` fixture in `conftest.py` so cumulative test calls across the suite don't trip 429 mid-run. Dedicated `tests/test_rate_limit.py` flips the limiter back on inside its own scope to verify the 11th call to `POST /leases` returns 429.
+
+**Live verified:** `for i in 1..12; do curl POST /leases; done` → 10×400, then 11×429, 12×429.
+
+151/151 backend tests passing.
 
 ### 9.4.13 Backend hardening — Phase 3: real /healthz + /readyz (landed 2026-05-04)
 

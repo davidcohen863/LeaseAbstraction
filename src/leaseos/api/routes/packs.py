@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import AuthenticatedUser, current_user
+from ..auth import AuthenticatedUser, cron_or_user, current_user
 from ..db import get_db
 from ..models import (
     Comparable,
@@ -133,7 +133,7 @@ def auto_trigger_packs(
     background: BackgroundTasks,
     days_ahead: int = Query(default=180, ge=1, le=365),
     dry_run: bool = Query(default=False),
-    user: AuthenticatedUser = Depends(current_user),
+    user: AuthenticatedUser = Depends(cron_or_user),  # nightly Render cron + UI button
     db: Session = Depends(get_db),
 ) -> AutoTriggerResult:
     """Find every `rent_review_trigger` event whose date is in the next

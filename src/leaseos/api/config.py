@@ -64,6 +64,13 @@ class Settings:
     slack_signing_secret: str | None = os.getenv("SLACK_SIGNING_SECRET")
     slack_default_webhook_url: str | None = os.getenv("SLACK_DEFAULT_WEBHOOK_URL")
 
+    # Shared secret for the daily-digest cron job. The cron sends this in
+    # `X-Cron-Secret` so it can hit `/integrations/slack/digest/run` without
+    # a JWT. Anyone hitting the endpoint without either a Clerk JWT or this
+    # header gets 401 in prod. Dev keeps `LEASEOS_AUTH_REQUIRED=false` so
+    # the bypass user works regardless.
+    cron_secret: str | None = os.getenv("LEASEOS_CRON_SECRET")
+
     # Google
     google_client_id: str | None = os.getenv("GOOGLE_CLIENT_ID")
     google_client_secret: str | None = os.getenv("GOOGLE_CLIENT_SECRET")

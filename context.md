@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-04 (after Backend-hardening Phase 5: Idempotency-Key support — accidental double-uploads return cached response, conflicting reuse returns 409)
+- Last updated: 2026-05-04 (after Backend-hardening Phases 6+7: auth-enforcement audit + cron_or_user dual-auth + optional Sentry)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -662,6 +662,27 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.16 Backend hardening — Phases 6+7: auth audit + Sentry (landed 2026-05-04)
+
+Sixth and seventh chunks of the "proper backend" pass — completes the work.
+
+**Phase 6: auth-enforcement audit + cron_or_user dual-auth**
+- New `tests/test_auth_audit.py::TestAuthCoverage::test_every_route_either_has_auth_or_is_listed_public` — walks every registered route at runtime, asserts each one either uses `Depends(current_user)` / `Depends(cron_or_user)` or appears in the explicit `INTENTIONALLY_PUBLIC` set. Anyone who adds a future endpoint without auth and without justifying it gets a failing test immediately. Covers all 48 routes today.
+- The audit found one real issue: `POST /integrations/slack/digest/run` was unauthenticated. Anyone could spam Slack messages. Same applied to `POST /packs/auto-trigger` once Clerk auth flips on (would 401 the cron job).
+- Fix: new `cron_or_user` dependency in `auth.py` accepts EITHER a valid Clerk JWT OR an `X-Cron-Secret: <LEASEOS_CRON_SECRET>` header (constant-time-compared). Returns a synthetic `cron` AuthenticatedUser when the secret matches so route bodies that read `user.id` for audit logging keep working unchanged.
+- Applied to `/slack/digest/run` and `/packs/auto-trigger`.
+- New env var `LEASEOS_CRON_SECRET` documented in DEPLOY.md; render.yaml updated so both cron jobs pass the header.
+- 3 new tests cover audit coverage + dev bypass + prod cron-secret path (no auth → 401, wrong secret → 401, right secret → 200).
+
+**Phase 7: optional Sentry integration**
+- New `src/leaseos/api/observability.py` — `setup_sentry(env)` initialises sentry-sdk only if `SENTRY_DSN` is set (no-op otherwise). When enabled: unhandled exceptions go to Sentry with full stack + request context, request_id from `request_id_ctx` is attached as a Sentry tag so a Sentry issue links 1:1 to the structured log line that produced it, user_id attached via `set_user` once auth resolves, performance tracing at 10% by default (configurable via `SENTRY_TRACES_SAMPLE_RATE`), release tagged from `LEASEOS_RELEASE` or Render's auto-set `RENDER_GIT_COMMIT`. `before_send_transaction` filters out `/healthz` `/readyz` `/health` so orchestrator probes don't dominate the transaction list.
+- `attach_request_context_to_sentry` called from the request-context middleware. No-op if Sentry isn't loaded — purely additive.
+- `setup_sentry` called from `create_app()` after `setup_logging`.
+- `send_default_pii=False` — request bodies / headers may contain lease data which is a customer record.
+- New dep `sentry-sdk[fastapi]>=2.0.0`. Optional via env vars, documented in DEPLOY.md.
+
+158/158 backend tests passing. **All 7 backend hardening phases complete.**
 
 ### 9.4.15 Backend hardening — Phase 5: Idempotency-Key support (landed 2026-05-04)
 

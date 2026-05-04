@@ -18,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .config import get_settings
 from .db import init_db
 from .logging import setup_logging
+from .observability import setup_sentry
 from .rate_limit import install_rate_limit
 from .request_context import RequestContextMiddleware
 from .routes import audit as audit_routes
@@ -100,6 +101,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
     _assert_safe_prod_config(settings)
     setup_logging(env=settings.environment)
+    # Sentry — no-op if SENTRY_DSN isn't set (i.e. local dev).
+    setup_sentry(env=settings.environment)
     app = FastAPI(title="LeaseOS API", version="0.2.0", lifespan=lifespan)
     # Middleware order matters — Starlette runs them outside-in, so the
     # request-context middleware needs to be added LAST (it runs first).

@@ -50,6 +50,10 @@ gh repo create leaseos --private --source=. --push   # or do it via the GitHub U
    |---|---|
    | `ANTHROPIC_API_KEY` | from console.anthropic.com |
    | `LEASEOS_SECRET_KEY` | a Fernet key — generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Used to encrypt Slack webhook URLs (and any future tokens) at rest. **Required in prod**: the API refuses to boot without it. |
+   | `LEASEOS_CRON_SECRET` | random opaque string (`openssl rand -hex 32`) shared between the API and the Render cron job. The cron passes it as `X-Cron-Secret` so it can hit `/integrations/slack/digest/run` and `/packs/auto-trigger` without a Clerk JWT. Required if the cron services are enabled — without it the crons 401. |
+   | `SENTRY_DSN` | optional. If set, unhandled exceptions get sent to Sentry with the per-request `request_id` as a tag (so Sentry issues link 1:1 with structured logs). Not required to deploy — leave unset for the pilot. |
+   | `SENTRY_TRACES_SAMPLE_RATE` | optional, default `0.1`. Fraction of requests instrumented for performance tracing. Bump for early debugging, drop to 0.0 to disable. |
+   | `LEASEOS_RELEASE` | optional. If set, tagged on every Sentry event so you can group by release. Render auto-sets `RENDER_GIT_COMMIT` which we fall back to. |
    | `CLERK_JWKS_URL` | from Clerk (step 2) |
    | `CLERK_ISSUER` | from Clerk (step 2) |
    | `LEASEOS_CORS_ORIGINS` | `https://YOUR-VERCEL-URL.vercel.app` (fill in after step 4). Must be https-only — no `*`, no localhost. The API refuses to boot otherwise. |

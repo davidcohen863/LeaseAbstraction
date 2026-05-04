@@ -22,6 +22,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .logging import get_logger, new_request_id, request_id_ctx, route_ctx
+from .observability import attach_request_context_to_sentry
 
 log = get_logger(__name__)
 
@@ -42,6 +43,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         # routing). For now stash the path; we'll overwrite with the template
         # post-call below if available.
         route_token = route_ctx.set(request.url.path)
+        # Tag Sentry with the request_id (no-op if Sentry isn't loaded)
+        attach_request_context_to_sentry(rid)
 
         try:
             response = await call_next(request)

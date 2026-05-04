@@ -78,6 +78,44 @@ def _ensure_user(db: Session, claims: dict) -> User:
     return user
 
 
+def cron_or_user(
+    authorization: str | None = Header(default=None),
+    x_cron_secret: str | None = Header(default=None, alias="X-Cron-Secret"),
+    db: Session = Depends(get_db),
+) -> AuthenticatedUser:
+    """Authorisation gate for endpoints that BOTH the UI (signed-in user) AND
+    a cron job need to hit — primarily `/integrations/slack/digest/run`.
+
+    Accepts either:
+      * a valid Clerk JWT (delegates to `current_user`), OR
+      * an `X-Cron-Secret` header matching `LEASEOS_CRON_SECRET`
+
+    Anything else 401s. In dev (`LEASEOS_AUTH_REQUIRED=false`) the synthetic
+    DEV_USER is returned regardless, same as `current_user`.
+
+    Returns the authenticated user (or a synthetic "cron" user) so route
+    bodies that read `user.id` for audit logging keep working unchanged.
+    """
+    settings = get_settings()
+    # Dev bypass — same logic as current_user
+    if not settings.auth_required:
+        return current_user(authorization=authorization, db=db)
+
+    # Cron path — env-var-presence + constant-time comparison
+    if settings.cron_secret and x_cron_secret:
+        import hmac
+        if hmac.compare_digest(x_cron_secret, settings.cron_secret):
+            return AuthenticatedUser(
+                id="cron",
+                email="cron@leaseos.internal",
+                display_name="Cron",
+                role="admin",
+            )
+
+    # Fall through to JWT path
+    return current_user(authorization=authorization, db=db)
+
+
 def current_user(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),

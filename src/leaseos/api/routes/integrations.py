@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from ...integrations import google as google_integ
 from ...integrations import microsoft as ms_integ
 from ...integrations import slack as slack_integ
-from ..auth import AuthenticatedUser, current_user
+from ..auth import AuthenticatedUser, cron_or_user, current_user
 from ..config import get_settings
 from ..crypto import decrypt_secret, encrypt_secret
 from ..db import get_db
@@ -111,10 +111,16 @@ def slack_test(
 
 @router.post("/slack/digest/run")
 def slack_digest_run(
+    user: AuthenticatedUser = Depends(cron_or_user),
     db: Session = Depends(get_db),
     days_ahead: int = Query(default=90, ge=1, le=365),
 ) -> dict:
-    """Trigger the daily digest send. In prod, called by a scheduled job."""
+    """Trigger the daily digest send.
+
+    Auth: either a signed-in user (UI button on /settings/integrations) OR
+    `X-Cron-Secret: <LEASEOS_CRON_SECRET>` for the Render daily cron. Hitting
+    this endpoint without either credential gets 401 in prod.
+    """
     sent = slack_integ.send_daily_digest(db, days_ahead=days_ahead)
     return {"ok": True, "sent": sent}
 

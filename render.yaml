@@ -54,10 +54,14 @@ services:
     plan: starter
     region: frankfurt
     schedule: "0 7 * * *"          # 07:00 UTC daily
-    dockerCommand: "curl -fsS -X POST $LEASEOS_API_URL/integrations/slack/digest/run"
+    # X-Cron-Secret authorises the call; the digest endpoint requires either
+    # a Clerk JWT (for the UI button) or this header (for the cron).
+    dockerCommand: "curl -fsS -X POST -H \"X-Cron-Secret: $LEASEOS_CRON_SECRET\" $LEASEOS_API_URL/integrations/slack/digest/run"
     envVars:
       - key: LEASEOS_API_URL
         sync: false                # set to https://leaseos-api.onrender.com once deployed
+      - key: LEASEOS_CRON_SECRET
+        sync: false                # MUST match the API service's value
 
   - type: cron
     name: leaseos-pack-auto-trigger
@@ -66,7 +70,10 @@ services:
     region: frankfurt
     schedule: "0 6 * * *"          # 06:00 UTC daily — runs before the 07:00 digest
     # Default horizon: 180 days. Each new pack costs ~£0.20 of API spend.
-    dockerCommand: "curl -fsS -X POST '$LEASEOS_API_URL/packs/auto-trigger?days_ahead=180'"
+    # X-Cron-Secret authorises the call (endpoint accepts JWT or this header).
+    dockerCommand: "curl -fsS -X POST -H \"X-Cron-Secret: $LEASEOS_CRON_SECRET\" '$LEASEOS_API_URL/packs/auto-trigger?days_ahead=180'"
     envVars:
       - key: LEASEOS_API_URL
         sync: false
+      - key: LEASEOS_CRON_SECRET
+        sync: false                # MUST match the API service's value

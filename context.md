@@ -2,7 +2,7 @@
 
 **One document containing everything needed to onboard a new collaborator (or remind yourself in 6 months) about why this project exists, what it does, what's been built, and what's next.**
 
-- Last updated: 2026-05-04 (after Backend-hardening Phase 1: storage abstraction so files no longer pinned to localhost — interface ready for S3/R2 in prod)
+- Last updated: 2026-05-04 (after Backend-hardening Phase 2: structured logging with request IDs — every log line now correlated to the request that produced it)
 - Repo: https://github.com/davidcohen863/LeaseAbstraction
 - Working name: **LeaseOS**
 - Pilot customer: **Claridges Commercial** (claridges-commercial.co.uk)
@@ -662,6 +662,25 @@ The full plan is in **[`UX_PLAN.md`](./UX_PLAN.md)**. Current state:
 - Background extraction + pack generation run in-process via FastAPI `BackgroundTasks` — fine for a single Render dyno; switch to RQ or Celery if many uploads land at once.
 - ✅ **Backend pytest suite** — 78 tests, ~1.4s, covers events math + recurring expansion + derive_events + two-pass merge + property dedup + route shape (TestClient) + filename sanitisation + Fernet round-trip + prod CORS assertion + sandbox file serving. Run `.venv/bin/pytest -v`. **No frontend tests yet** — Playwright smoke is the next gap.
 - ✅ **Alembic migrations** — `alembic/` initialised, baseline + dev-drift-cleanup + oauth_states revisions in place; `Dockerfile` runs `alembic upgrade head` before serving; `scripts/db.sh` (upgrade / current / history / new / check) is the local shortcut. `init_db()` still does `Base.metadata.create_all` for the no-arg dev case but Alembic is the source of truth in prod.
+
+### 9.4.12 Backend hardening — Phase 2: structured logging + request IDs (landed 2026-05-04)
+
+Second chunk of the "proper backend" pass.
+
+**Why:** the previous setup was stdlib `logging.basicConfig` + `--log-level info`. Lines came out as plain text with no correlation between them. In prod we need: JSON output (so Render / CloudWatch / Loki can parse it), per-request `request_id` on every line (so an error report can be traced back to "which request, which user"), `route` (so dashboards group by endpoint), and `user_id` once auth has resolved.
+
+**What landed:**
+- New `src/leaseos/api/logging.py` with `setup_logging(env)`, `get_logger(name)`, `new_request_id()`. `structlog` configured with `merge_contextvars` so per-request context follows the call automatically. Pretty-prints in dev (coloured terminal) + JSON-per-line in prod (gated by `LEASEOS_ENV`).
+- New `src/leaseos/api/request_context.py` `RequestContextMiddleware` — outermost middleware. Honours inbound `X-Request-ID` header (so Cloudflare / load balancer can stamp once and we propagate), falls back to `Cf-Ray`, otherwise generates a 16-char hex ID. Always echoes back as `X-Request-ID` on the response so the user can quote it in bug reports. Logs one `request` line per request with method/path/route-template/status. Uses the matched route template (`/leases/{lease_id}`) not the literal URL.
+- Sweep through every other module that called `logging.getLogger(__name__)` — `worker.py`, `pack_worker.py`, `crypto.py`, `integrations/{slack,google,microsoft}.py` — switched to `get_logger(__name__)` so they emit through the same pipeline and inherit the per-request context.
+- `auth.current_user` now sets the `user_id_ctx` contextvar after JWT verification (or in dev-bypass mode), so every log line emitted during the rest of the request includes who did it.
+- New dep: `structlog>=24.4.0` (added to `pyproject.toml`, installed cleanly).
+- 6 new tests in `test_request_context.py` covering: response always carries `X-Request-ID`, inbound header is honoured, `Cf-Ray` is the fallback, request_id is 16 hex chars, distinct per call, contextvars don't leak between requests.
+
+**Verification (live, via the running uvicorn):**
+- `curl -H "X-Request-ID: smoketest-abc-123" http://localhost:8000/leases` → `x-request-id: smoketest-abc-123` echoed back, log line `request method=GET path=/leases request_id=smoketest-abc-123 route=/leases status=200`.
+- Without the header, server generates one and echoes it.
+- 141/141 backend tests passing.
 
 ### 9.4.11 Backend hardening — Phase 1: storage abstraction (landed 2026-05-04)
 

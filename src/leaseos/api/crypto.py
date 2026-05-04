@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import logging
+from .logging import get_logger
 import os
 from functools import lru_cache
 
@@ -31,7 +31,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from .config import get_settings
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 ENC_PREFIX = "enc:v1:"
 

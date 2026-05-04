@@ -8,7 +8,7 @@ review required. We add a real OAuth-installable app post-pilot.
 
 from __future__ import annotations
 
-import logging
+from ..api.logging import get_logger
 from datetime import date, datetime, timedelta
 from typing import Iterable
 
@@ -21,7 +21,7 @@ from ..api.crypto import decrypt_secret
 from ..api.models import EventStatus, Lease, LeaseEvent, SlackIntegration
 from ..utils import utc_now
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def post_to_webhook(webhook_url: str, *, text: str, blocks: list[dict] | None = None) -> bool:

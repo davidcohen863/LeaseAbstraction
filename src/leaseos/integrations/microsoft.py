@@ -7,7 +7,7 @@ Tenant defaults to "common" so personal MS accounts and any work tenant can sign
 
 from __future__ import annotations
 
-import logging
+from ..api.logging import get_logger
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -18,7 +18,7 @@ from ..api.config import get_settings
 from ..api.models import LeaseEvent, OAuthToken
 from ..utils import utc_now
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 SCOPES = ["openid", "email", "offline_access", "Calendars.ReadWrite", "User.Read"]
 GRAPH_ME = "https://graph.microsoft.com/v1.0/me"

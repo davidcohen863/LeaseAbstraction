@@ -5,7 +5,7 @@ without changing the function signature.
 
 from __future__ import annotations
 
-import logging
+from .logging import get_logger
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +21,7 @@ from .events import derive_events
 from .models import Document, Lease, LeaseEvent, LeaseStatus, Property, normalise_address
 from .storage import coerce_to_key, get_storage
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def run_extraction(lease_id: str, pdf_storage_key: str) -> None:

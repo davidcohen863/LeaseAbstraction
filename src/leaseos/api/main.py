@@ -17,6 +17,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import get_settings
 from .db import init_db
+from .logging import setup_logging
+from .request_context import RequestContextMiddleware
 from .routes import audit as audit_routes
 from .routes import comparables as comparables_routes
 from .routes import events as events_routes
@@ -95,7 +97,10 @@ class NoStoreCacheMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     settings = get_settings()
     _assert_safe_prod_config(settings)
+    setup_logging(env=settings.environment)
     app = FastAPI(title="LeaseOS API", version="0.2.0", lifespan=lifespan)
+    # Middleware order matters — Starlette runs them outside-in, so the
+    # request-context middleware needs to be added LAST (it runs first).
     app.add_middleware(NoStoreCacheMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -104,6 +109,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Outermost — every other middleware sees a request_id in the context
+    app.add_middleware(RequestContextMiddleware)
 
     @app.get("/health", tags=["meta"])
     def health() -> dict:

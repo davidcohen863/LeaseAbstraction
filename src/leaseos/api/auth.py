@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import get_db
+from .logging import user_id_ctx
 from .models import User
 
 
@@ -87,6 +88,9 @@ def current_user(
         if not db.get(User, DEV_USER.id):
             db.add(User(id=DEV_USER.id, email=DEV_USER.email, display_name=DEV_USER.display_name, role="admin"))
             db.commit()
+        # Stamp the user_id onto the request context so subsequent log lines
+        # know who hit the endpoint.
+        user_id_ctx.set(DEV_USER.id)
         return DEV_USER
 
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -94,6 +98,7 @@ def current_user(
     token = authorization.split(" ", 1)[1]
     claims = _verify_clerk_jwt(token)
     user = _ensure_user(db, claims)
+    user_id_ctx.set(user.id)
     return AuthenticatedUser(
         id=user.id, email=user.email, display_name=user.display_name, role=user.role
     )

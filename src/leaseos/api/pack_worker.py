@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+from .logging import get_logger
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +24,7 @@ from .models import (
     RentReviewPack,
 )
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 # Map each PackDocumentKind to (markdown attr name on PackOutput, display title)

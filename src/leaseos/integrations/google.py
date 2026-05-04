@@ -9,7 +9,7 @@ Endpoints called:
 
 from __future__ import annotations
 
-import logging
+from ..api.logging import get_logger
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -20,7 +20,7 @@ from ..api.config import get_settings
 from ..api.models import LeaseEvent, OAuthToken
 from ..utils import utc_now
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
